@@ -1,118 +1,148 @@
 {
- "enabled": true,
- "poll_interval_seconds": 5,
- "reply": {
-  "private": {
-   "enabled": true,
-   "min_delay_s": 8,
-   "max_delay_s": 15,
-   "cooldown_s": 60,
-   "quiet_hours": {
-    "enabled": false,
-    "start": "23:30",
-    "end": "07:30",
-    "allow_contacts": []
-   },
-   "allow": [],
-   "deny": []
-  },
-  "group": {
-   "enabled": true,
-   "require_mention": true,
-   "min_delay_s": 2,
-   "max_delay_s": 5,
-   "mention_names": [
-    "爱而不恨"
-   ],
-   "allow": [],
-   "deny": []
-  },
-  "unlimited_groups": [
-   "【官方】DeepSeek交流34群"
-  ],
-  "unlimited_group_interval_s": 90,
-  "max_sentences": 4,
-  "sentence_delay_s": [
-   8,
-   8
-  ],
-  "allow_contacts": [],
-  "deny_contacts": [
-   "公众号",
-   "服务号",
-   "文件传输助手",
-   "微信团队"
-  ],
-  "max_reply_chars": 300,
-  "personas": {
-   "enabled": true,
-   "default": "",
-   "per_group": {
-    "【官方】DeepSeek交流34群": "wen"
-   },
-   "definitions": {
-    "wen": "personas/wen.md"
-   },
-   "dir": "personas",
-   "per_contact": {},
-   "behaviors": {
-    "_default": {
-     "at": 0.5,
-     "emoji": 0.5,
-     "sticker": 0.5,
-     "image": 0.5,
-     "quote": 0.5
+  "enabled": true,
+  "poll_interval_seconds": 5,
+  "reply": {
+    "private": {
+      "enabled": true,
+      "min_delay_s": 8,
+      "max_delay_s": 15,
+      "cooldown_s": 60,
+      "quiet_hours": {
+        "enabled": false,
+        "start": "23:30",
+        "end": "07:30",
+        "allow_contacts": []
+      },
+      "allow": [],
+      "deny": []
     },
-    "wen": {
-     "sticker": 0.3,
-     "emoji": 0.25,
-     "at": 0.4,
-     "image": 0.15,
-     "quote": 0.4
+    "group": {
+      "enabled": true,
+      "require_mention": true,
+      "min_delay_s": 2,
+      "max_delay_s": 5,
+      "mention_names": [
+        "YOUR_WECHAT_NICKNAME"
+      ],
+      "allow": [],
+      "deny": []
+    },
+    "unlimited_groups": [
+      "YOUR_UNLIMITED_GROUP_NAME"
+    ],
+    "unlimited_group_interval_s": 90,
+    "context_messages": {
+      "default": 8,
+      "YOUR_UNLIMITED_GROUP_NAME": 30
+    },
+    "group_persona": {},
+    "max_sentences": 4,
+    "sentence_delay_s": [
+      8,
+      8
+    ],
+    "allow_contacts": [],
+    "deny_contacts": [
+      "公众号",
+      "服务号",
+      "文件传输助手",
+      "微信团队"
+    ],
+    "max_reply_chars": 300,
+    "personas": {
+      "enabled": true,
+      "dir": "personas",
+      "default": "",
+      "per_group": {
+        "YOUR_UNLIMITED_GROUP_NAME": "wen"
+      },
+      "per_contact": {},
+      "definitions": {
+        "wen": "personas/wen.md"
+      },
+      "behaviors": {
+        "_default": {
+          "at": 0.2,
+          "emoji": 0.15,
+          "sticker": 0.15,
+          "image": 0.1,
+          "quote": 0.2
+        },
+        "wen": {
+          "sticker": 0.3,
+          "emoji": 0.25,
+          "at": 0.4,
+          "image": 0.15,
+          "quote": 0.4
+        }
+      }
+    },
+    "target_matcher": {
+      "YOUR_UNLIMITED_GROUP_NAME": {
+        "contains_all": [
+          "YOUR_KEYWORD"
+        ]
+      }
     }
-   }
   },
-  "context_messages": {
-   "default": 8,
-   "【官方】DeepSeek交流34群": 30
+  "llm": {
+    "base_url": "https://YOUR_LLM_ENDPOINT/v1",
+    "model": "YOUR_MODEL",
+    "api_key_env": "YOUR_LLM_KEY_ENV",
+    "temperature": 0.9,
+    "max_tokens": 400,
+    "context_window": 32000,
+    "fallbacks": [
+      {
+        "base_url": "https://YOUR_FALLBACK_ENDPOINT/v1",
+        "model": "YOUR_FALLBACK_MODEL",
+        "api_key_env": "YOUR_FALLBACK_KEY_ENV"
+      }
+    ]
   },
-  "group_persona": {},
-  "target_matcher": {}
- },
- "llm": {
-  "base_url": "https://opencode.ai/zen/go/v1",
-  "model": "deepseek-v4-flash",
-  "api_key_env": "OPENCODE_API_KEY",
-  "temperature": 1,
-  "max_tokens": 400
- },
- "vision": {
-  "enabled": true,
-  "base_url": "https://opencode.ai/zen/go/v1",
-  "model": "mimo-v2.5",
-  "api_key_env": "OPENCODE_API_KEY",
-  "max_tokens": 300,
-  "fallbacks": [
-   {
-    "base_url": "https://fast.clawapi.store/v1",
-    "model": "gpt-5.6-sol",
-    "api_key_env": "CLAWAPI_API_KEY"
-   }
+  "vision": {
+    "enabled": true,
+    "base_url": "https://YOUR_LLM_ENDPOINT/v1",
+    "model": "YOUR_VISION_MODEL",
+    "api_key_env": "YOUR_LLM_KEY_ENV",
+    "max_tokens": 300,
+    "fallbacks": [
+      {
+        "base_url": "https://YOUR_FALLBACK_ENDPOINT/v1",
+        "model": "YOUR_FALLBACK_MODEL",
+        "api_key_env": "YOUR_FALLBACK_KEY_ENV"
+      }
+    ]
+  },
+  "images": {
+    "enabled": true,
+    "dir": "YOUR_ABS_PATH/wxbot_images"
+  },
+  "stickers": {
+    "enabled": true,
+    "catalog": "YOUR_ABS_PATH/wxbot_images/stickers/catalog.json"
+  },
+  "files": {
+    "max_chars": 1500
+  },
+  "context": {
+    "compression": {
+      "enabled": false,
+      "mode": "percent",
+      "percent": 60,
+      "tokens": 4000,
+      "keep_recent": 4,
+      "trim_chars": 60
+    }
+  },
+  "memory": {
+    "enabled": true,
+    "every_n_replies": 5,
+    "long_term_chars": 1200,
+    "daily_chars": 800
+  },
+  "state_file": "YOUR_ABS_PATH/wxbot_state.json",
+  "own_nicknames": [
+    "YOUR_WECHAT_NICKNAME"
   ]
- },
- "images": {
-  "enabled": true,
-  "dir": "F:\\OpenClaw\\.openclaw\\workspace\\wxbot_images"
- },
- "stickers": {
-  "enabled": true,
-  "catalog": "F:\\OpenClaw\\.openclaw\\workspace\\wxbot_images\\stickers\\catalog.json"
- },
- "files": {
-  "max_chars": 1500
- },
- "state_file": "F:/OpenClaw/.openclaw/workspace/wxbot_state.json",
- "own_nicknames": [
-  "爱而不恨"
- ]
 }
