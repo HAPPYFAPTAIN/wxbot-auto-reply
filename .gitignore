@@ -9,6 +9,13 @@ wxbot_config.json
 wxbot_test_config.json
 wxbot_test_state.json
 
+# 对话级记忆 workspace（含聊天提炼内容，不入库）
+workspaces/
+
+# 本地图片库/贴纸目录/临时文件
+wxbot_images/
+tmp/
+
 # 系统/编辑器
 .DS_Store
 Thumbs.db

@@ -4,18 +4,38 @@
  "reply": {
   "private": {
    "enabled": true,
-   "min_delay_s": 8.0,
-   "max_delay_s": 15.0
+   "min_delay_s": 8,
+   "max_delay_s": 15,
+   "cooldown_s": 60,
+   "quiet_hours": {
+    "enabled": false,
+    "start": "23:30",
+    "end": "07:30",
+    "allow_contacts": []
+   },
+   "allow": [],
+   "deny": []
   },
   "group": {
    "enabled": true,
    "require_mention": true,
-   "min_delay_s": 2.0,
-   "max_delay_s": 5.0,
+   "min_delay_s": 2,
+   "max_delay_s": 5,
    "mention_names": [
-    "YOUR_NICKNAME"
-   ]
+    "爱而不恨"
+   ],
+   "allow": [],
+   "deny": []
   },
+  "unlimited_groups": [
+   "【官方】DeepSeek交流34群"
+  ],
+  "unlimited_group_interval_s": 90,
+  "max_sentences": 4,
+  "sentence_delay_s": [
+   8,
+   8
+  ],
   "allow_contacts": [],
   "deny_contacts": [
    "公众号",
@@ -24,38 +44,75 @@
    "微信团队"
   ],
   "max_reply_chars": 300,
-  "unlimited_groups": [],
-  "unlimited_group_interval_s": 0,
-  "max_sentences": 4,
-  "sentence_delay_s": [
-   1.0,
-   2.5
-  ],
-  "context_messages": {
-   "default": 8
-  },
-  "group_persona": {},
-  "target_matcher": {},
   "personas": {
    "enabled": true,
    "default": "",
    "per_group": {
-    "群名": "wen"
+    "【官方】DeepSeek交流34群": "wen"
    },
    "definitions": {
     "wen": "personas/wen.md"
+   },
+   "dir": "personas",
+   "per_contact": {},
+   "behaviors": {
+    "_default": {
+     "at": 0.5,
+     "emoji": 0.5,
+     "sticker": 0.5,
+     "image": 0.5,
+     "quote": 0.5
+    },
+    "wen": {
+     "sticker": 0.3,
+     "emoji": 0.25,
+     "at": 0.4,
+     "image": 0.15,
+     "quote": 0.4
+    }
    }
-  }
+  },
+  "context_messages": {
+   "default": 8,
+   "【官方】DeepSeek交流34群": 30
+  },
+  "group_persona": {},
+  "target_matcher": {}
  },
  "llm": {
-  "base_url": "https://YOUR_LLM_PROVIDER/v1",
-  "model": "YOUR_MODEL",
-  "api_key_env": "LLM_API_KEY",
-  "temperature": 0.9,
+  "base_url": "https://opencode.ai/zen/go/v1",
+  "model": "deepseek-v4-flash",
+  "api_key_env": "OPENCODE_API_KEY",
+  "temperature": 1,
   "max_tokens": 400
  },
- "state_file": "wxbot_state.json",
+ "vision": {
+  "enabled": true,
+  "base_url": "https://opencode.ai/zen/go/v1",
+  "model": "mimo-v2.5",
+  "api_key_env": "OPENCODE_API_KEY",
+  "max_tokens": 300,
+  "fallbacks": [
+   {
+    "base_url": "https://fast.clawapi.store/v1",
+    "model": "gpt-5.6-sol",
+    "api_key_env": "CLAWAPI_API_KEY"
+   }
+  ]
+ },
+ "images": {
+  "enabled": true,
+  "dir": "F:\\OpenClaw\\.openclaw\\workspace\\wxbot_images"
+ },
+ "stickers": {
+  "enabled": true,
+  "catalog": "F:\\OpenClaw\\.openclaw\\workspace\\wxbot_images\\stickers\\catalog.json"
+ },
+ "files": {
+  "max_chars": 1500
+ },
+ "state_file": "F:/OpenClaw/.openclaw/workspace/wxbot_state.json",
  "own_nicknames": [
-  "YOUR_NICKNAME"
+  "爱而不恨"
  ]
 }

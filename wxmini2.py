@@ -119,9 +119,10 @@ def copy_selection():
 
 _PASTE_SENTINEL = "\x00PASTE_CHECK\x00"
 
-def paste_verified(text):
+def paste_verified(text, allow_suffix=False):
     """真实粘贴并强制验证：剪贴板写入→读回校验→Ctrl+V→全选→复制→读回，
-    确认输入框里真的有这段文字（不是注入、也不是静默失败）。Returns True/False。"""
+    确认输入框里真的有这段文字（不是注入、也不是静默失败）。Returns True/False。
+    allow_suffix=True 用于输入框已有 @ 标签的场景：读回以 text 结尾即算成功。"""
     set_clipboard(text)
     if get_clipboard_text() != text:
         print("!! clipboard write verify failed")
@@ -134,6 +135,8 @@ def paste_verified(text):
     copy_selection(); time.sleep(random.uniform(0.35, 0.6))
     got = get_clipboard_text() or ""
     if got.strip() == text.strip():
+        return True
+    if allow_suffix and got.strip().endswith(text.strip()):
         return True
     print("!! paste verify failed: input readback mismatch (got %r)" % got[:60])
     return False
@@ -148,11 +151,11 @@ def click(x, y):
 # ---------------------------------------------------------------- window
 def find_wechat():
     """Find the REAL WeChat main window (Qt51514QWindowIcon), not the Chrome
-    搜一搜 webview which also has title 微信."""
+    搜一搜 webview which also has title 微信.
+    若主窗口被最小化到托盘（不可见），自动 ShowWindow 恢复。"""
     found = []
+    hidden = []
     def cb(hwnd, lparam):
-        if not u.IsWindowVisible(hwnd):
-            return True
         cls = ctypes.create_unicode_buffer(256)
         u.GetClassNameW(hwnd, cls, 256)
         if cls.value == "Qt51514QWindowIcon":
@@ -160,10 +163,19 @@ def find_wechat():
             buf = ctypes.create_unicode_buffer(length + 1)
             u.GetWindowTextW(hwnd, buf, length + 1)
             if buf.value.startswith("微信"):
-                found.append(hwnd)
+                if u.IsWindowVisible(hwnd):
+                    found.append(hwnd)
+                else:
+                    hidden.append(hwnd)
         return True
     WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
     u.EnumWindows(WNDENUMPROC(cb), 0)
+    if not found and hidden:
+        # 主窗口被收进托盘 → 恢复
+        u.ShowWindow(hidden[0], 9)
+        time.sleep(0.8)
+        if u.IsWindowVisible(hidden[0]):
+            found.append(hidden[0])
     if not found:
         raise RuntimeError("WeChat main window not found (is 微信 running?)")
     return found[0]
@@ -309,7 +321,7 @@ def read_chat(hwnd=None, limit=30, detect_side=True):
             kind = "file"
         elif name.replace(":", "").isdigit() and len(name) <= 5:
             kind = "time"
-        elif "[图片]" in name:
+        elif "[图片]" in name or name.strip() == "图片":
             kind = "image"
         elif "[聊天记录]" in name:
             kind = "history"
@@ -397,6 +409,84 @@ def current_chat_name(hwnd=None):
     c = _walk(_root(hwnd), 0, lambda c: c if c.AutomationId == "content_view.top_content_view.title_h_view.left_v_view.left_content_v_view.left_ui_.big_title_line_h_view.current_chat_name_label" else None)
     if c is None: return None
     return c.Name or None
+
+def restart_wechat(exe_path=r"E:\Weixin\Weixin.exe", wait_s=25):
+    """重启微信并自动进入主界面（登录确认页按 Enter）。
+    用于 UIA 树挂死（list_sessions 长期返回空）时的自愈。"""
+    import subprocess
+    for pid_name in ("Weixin",):
+        try:
+            subprocess.run(["taskkill", "/F", "/IM", f"{pid_name}.exe"],
+                           capture_output=True, timeout=10)
+        except Exception:
+            pass
+    time.sleep(3)
+    subprocess.Popen([exe_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(10)
+    # 登录确认界面：前置 + Enter 进入
+    t0 = time.time()
+    while time.time() - t0 < wait_s:
+        try:
+            hwnd = find_wechat()
+            force_foreground(hwnd)
+            time.sleep(0.5)
+            key(0x0D)
+            time.sleep(4)
+            ss = list_sessions(hwnd)
+            if ss:
+                return hwnd
+        except Exception:
+            time.sleep(2)
+    raise RuntimeError("restart_wechat: cannot enter main window")
+
+# ---------------------------------------------------------------- @ member
+def find_mention_list(hwnd):
+    return _walk(_root(hwnd), 0, lambda c: c if c.AutomationId == "chat_mention_list" else None)
+
+def at_member(hwnd, name, timeout=5.0):
+    """在当前打开的群聊里 @ 指定成员（输入框需已聚焦）。
+    流程：输 @ → 等 chat_mention_list 面板 → 输名字过滤 → 点匹配成员项。
+    成功后输入框里会有 @名字 标签，光标在其后，可继续输入正文。"""
+    type_unicode("@", delay=0.06)
+    t0 = time.time()
+    ml = None
+    while time.time() - t0 < timeout:
+        ml = find_mention_list(hwnd)
+        if ml is not None:
+            break
+        time.sleep(0.3)
+    if ml is None:
+        print("!! mention list did not appear")
+        return False
+    filt = name[:6]
+    if filt:
+        type_unicode(filt, delay=0.06)
+        time.sleep(0.9)
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        ml = find_mention_list(hwnd)
+        if ml is None:
+            return False
+        items = []
+        def ci(x):
+            if getattr(x, "ControlTypeName", "") == "ListItemControl":
+                items.append(x)
+        _walk_all(ml, 0, ci, maxd=6)
+        target = None
+        for it in items:
+            nm = (it.Name or "").strip()
+            if nm == name or nm.startswith(name) or (name and name.startswith(nm)):
+                target = it
+                break
+        if target is None and items:
+            target = items[0]
+        if target is not None:
+            r = target.BoundingRectangle
+            click((r.left + r.right) / 2, (r.top + r.bottom) / 2)
+            time.sleep(0.6)
+            return True
+        time.sleep(0.4)
+    return False
 
 # ---------------------------------------------------------------- send
 def open_chat_by_click(hwnd, name, timeout=6.0):
@@ -487,6 +577,441 @@ def send_text(contact, text):
     time.sleep(random.uniform(0.6, 1.2))  # 粘贴后到回车前的人性化停顿
     key(0x0D)  # Enter sends in WeChat PC default
     time.sleep(0.8)
+    _last_send_ts[0] = time.time()
+    return True
+
+def send_text_at(contact, at_name, text):
+    """群聊里先 @ 成员再发正文。at_name 为空则退化为普通 send_text。"""
+    if not at_name:
+        return send_text(contact, text)
+    gap = time.time() - _last_send_ts[0]
+    if gap < MIN_SEND_GAP_S:
+        time.sleep(MIN_SEND_GAP_S - gap)
+    hwnd = find_wechat()
+    cp = find_chat_page(hwnd)
+    cur = current_chat_name(hwnd) if cp is not None else None
+    if cp is None or cur != contact:
+        ok = open_chat_by_click(hwnd, contact)
+        if ok:
+            cp = find_chat_page(hwnd)
+        else:
+            cp = open_chat(hwnd, contact)
+    if cp is None:
+        raise RuntimeError(f"cannot open chat with {contact!r}")
+    force_foreground(hwnd)
+    ix = (cp[0] + cp[2]) / 2 + random.randint(-14, 14)
+    iy = cp[3] - 90 + random.randint(-6, 6)
+    click(ix, iy)
+    time.sleep(random.uniform(0.35, 0.6))
+    ok_at = False
+    try:
+        ok_at = at_member(hwnd, at_name)
+    except Exception as e:
+        print("at_member error:", e)
+    if not ok_at:
+        # @ 失败：清掉输入框残留的 @过滤字，退化为正文前加文字 @
+        select_all(); key(0x2E)
+        time.sleep(0.2)
+        click(ix, iy)
+        time.sleep(0.3)
+        text = f"@{at_name} " + text
+    # 粘贴正文（此时输入框可能已有 @ 标签，光标在其后；读回含 @标签故用 suffix 验证）
+    ok = False
+    try:
+        ok = paste_verified(text, allow_suffix=ok_at)
+    except Exception as e:
+        print("paste error:", e)
+    if not ok:
+        try:
+            click(ix, iy)
+            time.sleep(0.4)
+            ok = paste_verified(text, allow_suffix=ok_at)
+        except Exception as e:
+            print("paste retry error:", e)
+    if not ok:
+        print("!! PASTE FAILED — fallback typing")
+        type_unicode(text)
+        time.sleep(0.4)
+    time.sleep(random.uniform(0.6, 1.2))
+    key(0x0D)
+    time.sleep(0.8)
+    _last_send_ts[0] = time.time()
+    return True
+
+# ---------------------------------------------------------------- image send
+CF_DIB = 8
+
+def set_clipboard_image(path):
+    """把图片文件放到剪贴板（CF_DIB 位图格式），粘贴到微信会以图片消息发送。"""
+    import struct
+    from PIL import Image
+    im = Image.open(path).convert("RGB")
+    w, h = im.size
+    row_size = (w * 3 + 3) & ~3
+    px = im.load()
+    buf = bytearray()
+    # DIB: bottom-up, BGR
+    for y in range(h - 1, -1, -1):
+        row = bytearray()
+        for x in range(w):
+            r, g, b = px[x, y]
+            row += bytes((b, g, r))
+        row += b"\x00" * (row_size - w * 3)
+        buf += row
+    header = struct.pack("<IiiHHIIiiII", 40, w, h, 1, 24, 0, len(buf), 0, 0, 0, 0)
+    data = header + bytes(buf)
+    for _ in range(5):
+        if u.OpenClipboard(None):
+            break
+        time.sleep(0.1)
+    else:
+        raise RuntimeError("OpenClipboard failed")
+    try:
+        u.EmptyClipboard()
+        hg = k32.GlobalAlloc(GMEM_MOVEABLE, len(data))
+        if not hg:
+            raise RuntimeError("GlobalAlloc failed")
+        ptr = k32.GlobalLock(hg)
+        ctypes.memmove(ptr, data, len(data))
+        k32.GlobalUnlock(hg)
+        if not u.SetClipboardData(CF_DIB, hg):
+            raise RuntimeError("SetClipboardData failed")
+    finally:
+        u.CloseClipboard()
+
+def send_image(contact, path):
+    """打开会话并以图片形式发送本地图片。"""
+    gap = time.time() - _last_send_ts[0]
+    if gap < MIN_SEND_GAP_S:
+        time.sleep(MIN_SEND_GAP_S - gap)
+    hwnd = find_wechat()
+    cp = find_chat_page(hwnd)
+    cur = current_chat_name(hwnd) if cp is not None else None
+    if cp is None or cur != contact:
+        ok = open_chat_by_click(hwnd, contact)
+        if ok:
+            cp = find_chat_page(hwnd)
+        else:
+            cp = open_chat(hwnd, contact)
+    if cp is None:
+        raise RuntimeError(f"cannot open chat with {contact!r}")
+    force_foreground(hwnd)
+    ix = (cp[0] + cp[2]) / 2 + random.randint(-14, 14)
+    iy = cp[3] - 90 + random.randint(-6, 6)
+    click(ix, iy)
+    time.sleep(random.uniform(0.4, 0.7))
+    set_clipboard_image(path)
+    paste()
+    time.sleep(random.uniform(1.2, 2.0))  # 图片粘贴后等预览加载
+    key(0x0D)
+    time.sleep(1.0)
+    _last_send_ts[0] = time.time()
+    return True
+
+# ---------------------------------------------------------------- emoji
+_EMOJI_BTN_DX = 60   # 表情按钮相对 chat_page 左下角的偏移
+_EMOJI_BTN_DY = 59
+
+def _enum_qt_popups():
+    """枚举所有 Qt popup/tool 顶层窗口句柄。"""
+    hits = []
+    def cb(h, lp):
+        if u.IsWindowVisible(h):
+            cls = ctypes.create_unicode_buffer(256)
+            u.GetClassNameW(h, cls, 256)
+            if cls.value.startswith("Qt51514QWindowTool") or cls.value.startswith("Qt51514QWindowPopup"):
+                hits.append(h)
+        return True
+    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    u.EnumWindows(WNDENUMPROC(cb), 0)
+    return hits
+
+def wait_emoticon_popover(timeout=4.0):
+    """等表情面板（aid=EmoticonPopover）出现，返回其 root Control。"""
+    from wxauto4.uia import uiautomation as uia
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        for h in _enum_qt_popups():
+            try:
+                root = uia.ControlFromHandle(h)
+                if root.AutomationId == "EmoticonPopover":
+                    return root
+                c = _walk(root, 0, lambda x: x if x.AutomationId == "EmoticonPopover" else None, maxd=3)
+                if c is not None:
+                    return c
+            except Exception:
+                continue
+        time.sleep(0.3)
+    return None
+
+def _emoji_item(pop, name):
+    """在表情面板里按名字找表情项（TextControl），返回其可点击 ButtonControl 的中心坐标。"""
+    found = []
+    def fn(c):
+        try:
+            if c.ControlTypeName == "TextControl" and (c.Name or "").strip() == name:
+                r = c.BoundingRectangle
+                # 点 TextControl 中心即可（ButtonControl 在其内部）
+                found.append(((r.left + r.right) / 2, (r.top + r.bottom) / 2))
+        except Exception:
+            pass
+        return None
+    _walk(pop, 0, fn, maxd=14)
+    return found[0] if found else None
+
+def _emoji_tab_pos(pop, tab_name):
+    """在表情面板里找指定 tab（TabItemControl）的中心坐标。"""
+    pos = []
+    def ft(c):
+        try:
+            if c.ControlTypeName == "TabItemControl" and (c.Name or "").strip() == tab_name:
+                r = c.BoundingRectangle
+                pos.append(((r.left + r.right) / 2, (r.top + r.bottom) / 2))
+        except Exception:
+            pass
+        return None
+    _walk(pop, 0, ft, maxd=14)
+    return pos[0] if pos else None
+
+
+def list_custom_sticker_buttons(pop):
+    """列出自定义表情 tab 里的贴纸格子（ButtonControl，行优先排序），返回 rect 列表。"""
+    btns = []
+    def fb(c):
+        try:
+            if c.ControlTypeName == "ButtonControl":
+                r = c.BoundingRectangle
+                if r.right - r.left > 50 and r.bottom - r.top > 50:
+                    btns.append((int(r.left), int(r.top), int(r.right), int(r.bottom)))
+        except Exception:
+            pass
+        return None
+    _walk(pop, 0, fb, maxd=16)
+    return sorted(set(btns), key=lambda b: (b[1], b[0]))
+
+
+_CUSTOM_TAB = "自定义表情"
+
+
+def right_click(x, y):
+    """鼠标右键点击（物理坐标）。"""
+    u.SetCursorPos(int(x), int(y))
+    time.sleep(0.15)
+    u.mouse_event(0x0008, 0, 0, 0, 0)  # RIGHTDOWN
+    time.sleep(0.05)
+    u.mouse_event(0x0010, 0, 0, 0, 0)  # RIGHTUP
+
+
+def click_context_menu(item_name, timeout=3.0):
+    """在右键弹出的上下文菜单里点指定 MenuItemControl（如 '引用'/'复制'）。"""
+    from wxauto4.uia import uiautomation as uia
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        for h in _enum_qt_popups():
+            try:
+                root = uia.ControlFromHandle(h)
+                pos = [None]
+                def fn(c):
+                    try:
+                        if c.ControlTypeName == "MenuItemControl" and (c.Name or "").strip() == item_name:
+                            r = c.BoundingRectangle
+                            pos[0] = ((r.left + r.right) / 2, (r.top + r.bottom) / 2)
+                    except Exception:
+                        pass
+                    return None
+                _walk(root, 0, fn, maxd=8)
+                if pos[0]:
+                    click(pos[0][0], pos[0][1])
+                    return True
+            except Exception:
+                continue
+        time.sleep(0.3)
+    return False
+
+
+def quote_reply(contact, bubble_rect, text):
+    """引用指定气泡的消息并回复。bubble_rect = read_chat 里那条消息的 rect。
+    流程：右键气泡中心 → 菜单点「引用」→ 粘贴文本 → 回车。"""
+    gap = time.time() - _last_send_ts[0]
+    if gap < MIN_SEND_GAP_S:
+        time.sleep(MIN_SEND_GAP_S - gap)
+    hwnd = find_wechat()
+    cp = find_chat_page(hwnd)
+    cur = current_chat_name(hwnd) if cp is not None else None
+    if cp is None or cur != contact:
+        ok = open_chat_by_click(hwnd, contact)
+        if ok:
+            cp = find_chat_page(hwnd)
+        else:
+            cp = open_chat(hwnd, contact)
+    if cp is None:
+        raise RuntimeError(f"cannot open chat with {contact!r}")
+    force_foreground(hwnd)
+    l, t, r, b = [int(v) for v in bubble_rect]
+    right_click((l + r) / 2, (t + b) / 2)
+    time.sleep(0.8)
+    if not click_context_menu("引用"):
+        print("!! 引用 menu item not found, fallback to plain send")
+        key(0x1B)
+        time.sleep(0.3)
+        return send_text(contact, text)
+    time.sleep(0.8)
+    paste_verified(text, allow_suffix=True)
+    time.sleep(0.4)
+    key(0x0D)
+    time.sleep(0.6)
+    _last_send_ts[0] = time.time()
+    return True
+
+
+def set_clipboard_files(paths):
+    """把文件路径列表放上剪贴板（CF_HDROP），粘贴后作为文件消息。"""
+    import struct
+    CF_HDROP = 15
+    GHND = 0x0042
+    files_w = "\x00".join(paths) + "\x00\x00"
+    data = files_w.encode("utf-16-le")
+    drop = struct.pack("<IiiII", 20, 0, 0, 0, 1) + data
+    for _ in range(10):
+        if u.OpenClipboard(None):
+            break
+        time.sleep(0.1)
+    u.EmptyClipboard()
+    h = k32.GlobalAlloc(GHND, len(drop))
+    ptr = k32.GlobalLock(h)
+    ctypes.memmove(ptr, drop, len(drop))
+    k32.GlobalUnlock(h)
+    u.SetClipboardData(CF_HDROP, h)
+    u.CloseClipboard()
+
+
+def send_file(contact, path):
+    """以文件消息形式发送本地文件（CF_HDROP 剪贴板方案）。"""
+    gap = time.time() - _last_send_ts[0]
+    if gap < MIN_SEND_GAP_S:
+        time.sleep(MIN_SEND_GAP_S - gap)
+    hwnd = find_wechat()
+    cp = find_chat_page(hwnd)
+    cur = current_chat_name(hwnd) if cp is not None else None
+    if cp is None or cur != contact:
+        ok = open_chat_by_click(hwnd, contact)
+        if ok:
+            cp = find_chat_page(hwnd)
+        else:
+            cp = open_chat(hwnd, contact)
+    if cp is None:
+        raise RuntimeError(f"cannot open chat with {contact!r}")
+    force_foreground(hwnd)
+    set_clipboard_files([os.path.abspath(path)])
+    click(cp[0] + 400, cp[3] - 80)
+    time.sleep(0.3)
+    paste()
+    time.sleep(1.5)
+    key(0x0D)
+    time.sleep(1.5)
+    _last_send_ts[0] = time.time()
+    return True
+
+
+def send_sticker(contact, index):
+    """发送自定义表情（爱心收藏 tab）里第 index 张贴纸（1 起，行优先从左到右）。
+    贴纸点击即发送，无需回车。index 超出范围返回 False。"""
+    gap = time.time() - _last_send_ts[0]
+    if gap < MIN_SEND_GAP_S:
+        time.sleep(MIN_SEND_GAP_S - gap)
+    hwnd = find_wechat()
+    cp = find_chat_page(hwnd)
+    cur = current_chat_name(hwnd) if cp is not None else None
+    if cp is None or cur != contact:
+        ok = open_chat_by_click(hwnd, contact)
+        if ok:
+            cp = find_chat_page(hwnd)
+        else:
+            cp = open_chat(hwnd, contact)
+    if cp is None:
+        raise RuntimeError(f"cannot open chat with {contact!r}")
+    force_foreground(hwnd)
+    click(cp[0] + _EMOJI_BTN_DX + random.randint(-4, 4), cp[3] - _EMOJI_BTN_DY + random.randint(-3, 3))
+    pop = wait_emoticon_popover(timeout=4.0)
+    if pop is None:
+        print("!! emoticon popover not found")
+        return False
+    time.sleep(0.5)
+    tp = _emoji_tab_pos(pop, _CUSTOM_TAB)
+    if tp is None:
+        print(f"!! tab {_CUSTOM_TAB!r} not found")
+        key(0x1B)
+        return False
+    click(tp[0], tp[1])
+    time.sleep(1.0)
+    btns = list_custom_sticker_buttons(pop)
+    if not (1 <= index <= len(btns)):
+        print(f"!! sticker index {index} out of range (1..{len(btns)})")
+        key(0x1B)
+        return False
+    l, t, r, b = btns[index - 1]
+    click((l + r) / 2 + random.randint(-3, 3), (t + b) / 2 + random.randint(-3, 3))
+    time.sleep(0.8)
+    key(0x1B)  # 贴纸点击即发，ESC 收尾关面板（若还开着）
+    _last_send_ts[0] = time.time()
+    return True
+
+
+def send_emoji(contact, emoji_name, tab_name=None):
+    """发送微信表情。emoji_name 如 '微笑'/'旺柴'/'捂脸'。
+    tab_name=None 用当前 tab（默认表情）；指定如 '自定义表情'/'赞萌露比' 则先切 tab。
+    小黄脸进输入框后回车发送；贴纸类点击直接发送。"""
+    gap = time.time() - _last_send_ts[0]
+    if gap < MIN_SEND_GAP_S:
+        time.sleep(MIN_SEND_GAP_S - gap)
+    hwnd = find_wechat()
+    cp = find_chat_page(hwnd)
+    cur = current_chat_name(hwnd) if cp is not None else None
+    if cp is None or cur != contact:
+        ok = open_chat_by_click(hwnd, contact)
+        if ok:
+            cp = find_chat_page(hwnd)
+        else:
+            cp = open_chat(hwnd, contact)
+    if cp is None:
+        raise RuntimeError(f"cannot open chat with {contact!r}")
+    force_foreground(hwnd)
+    click(cp[0] + _EMOJI_BTN_DX + random.randint(-4, 4), cp[3] - _EMOJI_BTN_DY + random.randint(-3, 3))
+    pop = wait_emoticon_popover(timeout=4.0)
+    if pop is None:
+        print("!! emoticon popover not found")
+        return False
+    time.sleep(0.5)
+    if tab_name:
+        # 切 tab
+        tab_pos = None
+        def ft(c):
+            nonlocal tab_pos
+            try:
+                if c.ControlTypeName == "TabItemControl" and (c.Name or "").strip() == tab_name:
+                    r = c.BoundingRectangle
+                    tab_pos = ((r.left + r.right) / 2, (r.top + r.bottom) / 2)
+            except Exception:
+                pass
+            return None
+        _walk(pop, 0, ft, maxd=14)
+        if tab_pos:
+            click(tab_pos[0], tab_pos[1])
+            time.sleep(0.8)
+        else:
+            print(f"!! emoji tab {tab_name!r} not found")
+    pos = _emoji_item(pop, emoji_name)
+    if pos is None:
+        print(f"!! emoji {emoji_name!r} not found in panel")
+        key(0x1B)
+        return False
+    click(pos[0], pos[1])
+    time.sleep(0.7)
+    # 小黄脸会插入输入框，回车发送；贴纸点击即发出（回车无妨，输入框为空时 Enter 不发送）
+    key(0x0D)
+    time.sleep(0.6)
+    # 若面板还开着就关掉
+    key(0x1B)
     _last_send_ts[0] = time.time()
     return True
 
