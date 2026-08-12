@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>wxbot 控制台</title>
+<style>
+  :root { --bg:#1e1e20; --panel:#2a2a2e; --border:#3a3a40; --fg:#e8e8ea; --dim:#9a9aa2; --accent:#53d27a; --danger:#e05555; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"Microsoft YaHei",system-ui,sans-serif; background:var(--bg); color:var(--fg); font-size:14px; }
+  header { display:flex; align-items:center; gap:12px; padding:14px 20px; background:var(--panel); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:10; }
+  header h1 { font-size:17px; margin:0; }
+  .badge { padding:3px 10px; border-radius:12px; font-size:12px; background:#444; color:var(--dim); }
+  .badge.on { background:#1e4d2c; color:var(--accent); }
+  .badge.off { background:#4d1e1e; color:var(--danger); }
+  main { max-width:860px; margin:0 auto; padding:20px; }
+  section { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:16px 18px; margin-bottom:16px; }
+  section h2 { font-size:14px; margin:0 0 12px; color:var(--accent); }
+  .row { display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
+  .row label { width:170px; color:var(--dim); flex-shrink:0; }
+  input[type=text], input[type=number], textarea, select { background:#1a1a1c; border:1px solid var(--border); color:var(--fg); border-radius:6px; padding:6px 10px; font-size:13px; }
+  input[type=number] { width:90px; }
+  input[type=text] { width:280px; }
+  textarea { width:100%; min-height:70px; font-family:inherit; resize:vertical; }
+  button { background:var(--accent); color:#122; border:none; border-radius:6px; padding:8px 18px; font-size:13px; cursor:pointer; font-weight:bold; }
+  button.ghost { background:#3a3a40; color:var(--fg); }
+  button.danger { background:var(--danger); color:#fff; }
+  button:hover { filter:brightness(1.15); }
+  #toast { position:fixed; top:14px; right:14px; background:#1e4d2c; color:var(--accent); padding:10px 16px; border-radius:8px; display:none; z-index:99; }
+  #logs { background:#141416; border:1px solid var(--border); border-radius:8px; padding:10px; font-family:Consolas,monospace; font-size:12px; white-space:pre-wrap; max-height:280px; overflow-y:auto; color:#b8e6c8; }
+  .hint { color:var(--dim); font-size:12px; margin-top:2px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🤖 wxbot 控制台</h1>
+  <span id="procBadge" class="badge">检测中…</span>
+  <span style="flex:1"></span>
+  <button class="ghost" id="btnRefresh">刷新</button>
+  <button class="danger" id="btnRestart">重启 wxbot</button>
+</header>
+<main>
+  <section>
+    <h2>总开关</h2>
+    <div class="row"><label>启用自动回复</label><input type="checkbox" id="enabled"></div>
+    <div class="row"><label>轮询间隔（秒）</label><input type="number" id="poll_interval_seconds" step="1"></div>
+  </section>
+
+  <section>
+    <h2>延时（秒）</h2>
+    <div class="row"><label>私聊延时 min / max</label><input type="number" id="priv_min" step="0.5"> — <input type="number" id="priv_max" step="0.5"></div>
+    <div class="row"><label>群聊延时 min / max</label><input type="number" id="grp_min" step="0.5"> — <input type="number" id="grp_max" step="0.5"></div>
+    <div class="row"><label>句间停顿 min / max</label><input type="number" id="sent_min" step="0.1"> — <input type="number" id="sent_max" step="0.1"></div>
+  </section>
+
+  <section>
+    <h2>分句与回复</h2>
+    <div class="row"><label>一批最多几句</label><input type="number" id="max_sentences" step="1" min="1" max="10"></div>
+    <div class="row"><label>回复字数上限</label><input type="number" id="max_reply_chars" step="10"></div>
+  </section>
+
+  <section>
+    <h2>群聊规则</h2>
+    <div class="row"><label>无限制群回复间隔（秒）</label><input type="number" id="unlim_interval" step="5"></div>
+    <div class="row"><label>无限制群（每行一个）</label></div>
+    <textarea id="unlimited_groups"></textarea>
+    <div class="hint">无限制群：不需要 [有人@我] 标记，有新消息即可回复</div>
+    <div class="row" style="margin-top:10px"><label>黑名单（每行一个）</label></div>
+    <textarea id="deny_contacts"></textarea>
+  </section>
+
+  <section>
+    <h2>模型（LLM）</h2>
+    <div class="row"><label>base_url</label><input type="text" id="llm_base_url" style="width:340px"></div>
+    <div class="row"><label>model</label><input type="text" id="llm_model"></div>
+    <div class="row"><label>api_key 环境变量名</label><input type="text" id="llm_key_env"></div>
+    <div class="row"><label>temperature</label><input type="number" id="llm_temp" step="0.1" min="0" max="2"></div>
+    <div class="row"><label>max_tokens</label><input type="number" id="llm_max_tokens" step="50"></div>
+  </section>
+
+  <div class="row" style="justify-content:flex-end">
+    <button id="btnSave">💾 保存配置</button>
+  </div>
+
+  <section>
+    <h2>运行日志</h2>
+    <div id="logs">加载中…</div>
+  </section>
+</main>
+<div id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# 依赖与构建产物
+node_modules/
+dist/
+*.log
+
+# 运行状态与本地数据（含聊天内容，绝不入库）
+wxbot_state.json
+wxbot_config.json
+wxbot_test_config.json
+wxbot_test_state.json
+
+# 系统/编辑器
+.DS_Store
+Thumbs.db

@@ -1,0 +1,51 @@
+{
+ "enabled": true,
+ "poll_interval_seconds": 5,
+ "reply": {
+  "private": {
+   "enabled": true,
+   "min_delay_s": 8.0,
+   "max_delay_s": 15.0
+  },
+  "group": {
+   "enabled": true,
+   "require_mention": true,
+   "min_delay_s": 2.0,
+   "max_delay_s": 5.0,
+   "mention_names": [
+    "YOUR_NICKNAME"
+   ]
+  },
+  "allow_contacts": [],
+  "deny_contacts": [
+   "公众号",
+   "服务号",
+   "文件传输助手",
+   "微信团队"
+  ],
+  "max_reply_chars": 300,
+  "unlimited_groups": [],
+  "unlimited_group_interval_s": 0,
+  "max_sentences": 4,
+  "sentence_delay_s": [
+   1.0,
+   2.5
+  ],
+  "context_messages": {
+   "default": 8
+  },
+  "group_persona": {},
+  "target_matcher": {}
+ },
+ "llm": {
+  "base_url": "https://YOUR_LLM_PROVIDER/v1",
+  "model": "YOUR_MODEL",
+  "api_key_env": "LLM_API_KEY",
+  "temperature": 0.9,
+  "max_tokens": 400
+ },
+ "state_file": "wxbot_state.json",
+ "own_nicknames": [
+  "YOUR_NICKNAME"
+ ]
+}
