@@ -352,7 +352,11 @@ def _annotate_sides(ml, out):
     W, H = img.size
     if W <= 0 or H <= 0:
         return
-    BG = (30, 30, 31)
+    # 背景色动态采样：取几个边缘点里出现最多的颜色当 BG，深/浅主题自适应
+    from collections import Counter
+    sample_pts = [(4, 4), (W - 5, 4), (4, H - 5), (W - 5, H - 5), (W // 2, 4), (W // 2, H - 5)]
+    bg_votes = Counter(img.getpixel(p) for p in sample_pts if 0 <= p[0] < W and 0 <= p[1] < H)
+    BG = bg_votes.most_common(1)[0][0] if bg_votes else (30, 30, 31)
     def close(c1, c2, tol=12):
         return all(abs(a - b) <= tol for a, b in zip(c1, c2))
     def classify(rect):

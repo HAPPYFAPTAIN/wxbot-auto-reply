@@ -64,7 +64,10 @@ DEFAULT_CONFIG = {
         "api_key_env": "OPENCODE_API_KEY",
         "temperature": 0.9,
         "max_tokens": 400,
-        "context_window": 32000
+        "context_window": 32000,
+        "fallbacks": [
+            {"base_url": "https://fast.clawapi.store/v1", "model": "gpt-5.6-sol", "api_key_env": "CLAWAPI_API_KEY"}
+        ]
     },
     "vision": {
         "enabled": True,
@@ -575,28 +578,59 @@ def _memory_extract(cfg, name, ctx_lines):
 
 
 def _llm_call(cfg, system, user_content):
-    """发一次 chat completions，返回文本（或 None）。"""
-    url = cfg["llm"]["base_url"].rstrip("/") + "/chat/completions"
-    api_key = _api_key(cfg)
-    if not api_key:
-        return None
-    payload = {
-        "model": cfg["llm"]["model"],
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user_content}
-        ],
-        "temperature": cfg["llm"].get("temperature", 0.9),
-        "max_tokens": cfg["llm"].get("max_tokens", 400),
-    }
-    try:
-        data = _http_post_json(url, payload, api_key, timeout=60)
-        reply = data["choices"][0]["message"]["content"].strip()
-        return reply[:cfg["reply"].get("max_reply_chars", 300)]
-    except Exception as e:
-        print("llm error:", e)
-        return None
+    """发一次 chat completions，返回文本（或 None）。
+    主通道挂了按 llm.fallbacks 链逐个试（跟 vision 一个套路），全挂才返回 None。"""
+    lcfg = cfg["llm"]
+    attempts = [{
+        "base_url": lcfg["base_url"],
+        "model": lcfg["model"],
+        "_key": _api_key(cfg),
+    }]
+    for fb in lcfg.get("fallbacks", []) or []:
+        attempts.append({
+            "base_url": fb["base_url"],
+            "model": fb["model"],
+            "_key": _load_api_key(fb.get("api_key_env", "")),
+        })
+    for i, a in enumerate(attempts):
+        if not a["_key"]:
+            continue
+        url = a["base_url"].rstrip("/") + "/chat/completions"
+        payload = {
+            "model": a["model"],
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_content}
+            ],
+            "temperature": lcfg.get("temperature", 0.9),
+            "max_tokens": lcfg.get("max_tokens", 400),
+        }
+        try:
+            data = _http_post_json(url, payload, a["_key"], timeout=60)
+            reply = data["choices"][0]["message"]["content"].strip()
+            if i > 0:
+                print(f"[llm] fallback ok: {a['model']}")
+            return reply[:cfg["reply"].get("max_reply_chars", 300)]
+        except Exception as e:
+            print(f"llm error ({a['model']}):", e)
+    return None
 
+
+# ---------------------------------------------------------------- LLM 全局退避
+# 所有通道都挂时进入退避：期间不开窗、不 mark_seen（网络恢复后自动重试漏掉的消息）
+_LLM_BACKOFF = {"until": 0.0, "streak": 0, "logged": False}
+
+def _llm_note_failure():
+    _LLM_BACKOFF["streak"] += 1
+    wait = min(300, 30 * _LLM_BACKOFF["streak"])
+    _LLM_BACKOFF["until"] = time.time() + wait
+    _LLM_BACKOFF["logged"] = False
+    print(f"[llm] all channels down, backoff {wait:.0f}s")
+
+def _llm_note_success():
+    _LLM_BACKOFF["streak"] = 0
+    _LLM_BACKOFF["until"] = 0.0
+    _LLM_BACKOFF["logged"] = False
 
 def normalize_nick(nick):
     """Strip Unicode combining/enclosing marks so '温⃞先⃞生⃞' becomes '温先生'."""
@@ -648,14 +682,33 @@ def mentioned_me(text, cfg):
             return True
     return False
 
+# UIA 错误日志节流：同一种错只打首条，之后每 20 次报一次计数
+_UIA_ERR = {"msg": None, "count": 0}
+
+def _log_uia_error(e):
+    msg = str(e)
+    if msg != _UIA_ERR["msg"]:
+        if _UIA_ERR["count"] > 1:
+            print(f"list_sessions error: (上一条重复了 {_UIA_ERR['count']} 次)")
+        _UIA_ERR["msg"] = msg
+        _UIA_ERR["count"] = 1
+        print("list_sessions error:", e)
+    else:
+        _UIA_ERR["count"] += 1
+        if _UIA_ERR["count"] % 20 == 0:
+            print(f"list_sessions error: (已连续 {_UIA_ERR['count']} 次) {msg[:60]}")
+
+
 def poll_once(cfg, state, hwnd):
-    """One poll cycle. Returns list of (conversation, text) replied."""
+    """One poll cycle. Returns (replied, n_sessions)；n_sessions=-1 表示 list_sessions 异常。"""
     replied = []
     try:
         sessions = wx.list_sessions(hwnd)
+        _UIA_ERR["msg"] = None
+        _UIA_ERR["count"] = 0
     except Exception as e:
-        print("list_sessions error:", e)
-        return replied
+        _log_uia_error(e)
+        return replied, -1
 
     for s in sessions:
         name = s["name"]
@@ -737,19 +790,57 @@ def poll_once(cfg, state, hwnd):
                 state.save()
                 continue
 
+        # LLM 全局退避：网络全挂时不开窗、不标已读，等恢复后重试
+        if time.time() < _LLM_BACKOFF["until"]:
+            if not _LLM_BACKOFF["logged"]:
+                print(f"[poll] llm backoff {_LLM_BACKOFF['until'] - time.time():.0f}s left，暂不回（消息保留待重试）")
+                _LLM_BACKOFF["logged"] = True
+            continue
+
+        # 上下文条数先算好：只追溯这个要回复的窗口需要的条数，不做全量遍历
+        ctx_cfg = cfg["reply"].get("context_messages", 8)
+        if isinstance(ctx_cfg, dict):
+            ctx_n = int(ctx_cfg.get(name, ctx_cfg.get("default", 8)))
+        else:
+            ctx_n = int(ctx_cfg)
+        ctx_n = max(1, min(1000, ctx_n))  # 上限 1000 条
+
         # open the conversation and read fresh bubbles (with side detection)
         try:
             ok = wx.open_chat_by_click(hwnd, name)
             if not ok:
                 continue
             time.sleep(0.8)
-            msgs = wx.read_chat(hwnd, limit=15, detect_side=True)
+            msgs = wx.read_chat(hwnd, limit=max(ctx_n, 5), detect_side=True)
         except Exception as e:
             print(f"open/read {name} error:", e)
             continue
 
         # find the last bubble sent by the OTHER side (text 或图片或文件)
         other_bubbles = [m for m in msgs if m["side"] == "other" and m["kind"] in ("text", "image", "file")]
+        if not other_bubbles:
+            # 判边全灭时的兜底：用会话预览（群「昵称: 内容」/私聊直接是内容）匹配气泡定位对方消息
+            prev = re.sub(r"^\[(\d+条|有人@我)\]\s*", "", last or "").strip()
+            pm = re.match(r"^[^\s:：\[\]]{1,30}[:：](.*)$", prev)
+            if is_group and pm:
+                prev = pm.group(1).strip()
+            if prev and not state.recently_sent(name, prev, window_s=86400 * 365):
+                def _squash(s):
+                    return re.sub(r"[\u2005\u2006\s]", "", s or "")
+                sq = _squash(prev)
+                # 多级匹配：全文 → 尾部 12 字 → 尾部 6 字（兼容预览与气泡里 @ 标签渲染差异）
+                cands = [c for c in (sq, sq[-12:], sq[-6:]) if len(c) >= 2]
+                for cand in cands:
+                    hit = None
+                    for m in reversed(msgs):
+                        if m["kind"] in ("text", "image", "file") and cand in _squash(m["text"]):
+                            hit = m
+                            break
+                    if hit:
+                        hit["side"] = "other"
+                        other_bubbles = [hit]
+                        print(f"[poll] {name} side-detect fallback via preview")
+                        break
         if not other_bubbles:
             print(f"[poll] {name} skip: no other-side msg")
             state.mark_seen(name, last or "")
@@ -810,12 +901,6 @@ def poll_once(cfg, state, hwnd):
             continue
 
         # build context lines (recent messages with side markers) for the LLM
-        ctx_cfg = cfg["reply"].get("context_messages", 8)
-        if isinstance(ctx_cfg, dict):
-            ctx_n = int(ctx_cfg.get(name, ctx_cfg.get("default", 8)))
-        else:
-            ctx_n = int(ctx_cfg)
-        ctx_n = max(1, min(1000, ctx_n))  # 上限 1000 条
         ctx_lines = []
         for m in msgs[-ctx_n:]:
             who = "我" if m["side"] == "own" else "对方"
@@ -849,16 +934,15 @@ def poll_once(cfg, state, hwnd):
             incoming = target_text
         reply = llm_reply(cfg, name, incoming, context=ctx_lines, is_group=is_group)
         if not reply:
-            state.mark_seen(name, last)
-            state.save()
-            continue
+            _llm_note_failure()
+            continue  # 不 mark_seen：退避结束后重新捡回来回
+        _llm_note_success()
         if reply.strip().startswith("[SKIP]") and is_target:
             # 对线目标的发言绝不允许 SKIP：强制重新生成，必须反击
             print(f"[poll] {name} target msg must not SKIP, regenerating")
             reply = llm_reply(cfg, name, incoming + "\n（系统提示：这是对线目标的发言，你必须反击，绝不许回 [SKIP]）", context=ctx_lines, is_group=is_group)
             if not reply:
-                state.mark_seen(name, last)
-                state.save()
+                _llm_note_failure()
                 continue
         if reply.strip().startswith("[SKIP]"):
             print(f"[poll] {name} model chose to SKIP")
@@ -994,7 +1078,7 @@ def poll_once(cfg, state, hwnd):
             state.save()
             replied.append((name, reply))
 
-    return replied
+    return replied, len(sessions)
 
 def main():
     cfg = load_config()
@@ -1006,26 +1090,22 @@ def main():
     print(f"wxbot started. hwnd={hwnd} interval={cfg['poll_interval_seconds']}s")
     # one-shot mode: python wxbot.py --once
     if len(sys.argv) > 1 and sys.argv[1] == "--once":
-        replied = poll_once(cfg, state, hwnd)
+        replied, _n = poll_once(cfg, state, hwnd)
         print(f"[once] replied {len(replied)} conversation(s)")
         return
     uia_fail_streak = 0
     while True:
         try:
-            replied = poll_once(cfg, state, hwnd)
+            replied, n_sessions = poll_once(cfg, state, hwnd)
             if replied:
                 print(f"replied {len(replied)} conversation(s)")
-            uia_fail_streak = 0
         except Exception as e:
             print("poll error:", e)
-        # UIA 自愈：list_sessions 连续空读 → 重试仍空则重启微信
-        try:
-            ss = wx.list_sessions(hwnd)
-            if ss:
-                uia_fail_streak = 0
-            else:
-                uia_fail_streak += 1
-        except Exception:
+            n_sessions = -1
+        # UIA 自愈：直接用本轮 poll 的结果计数，不再重复调 list_sessions（少压 UIA 一倍）
+        if n_sessions > 0:
+            uia_fail_streak = 0
+        else:
             uia_fail_streak += 1
         if uia_fail_streak >= 6:
             print("[wxbot] UIA unresponsive, restarting WeChat...")
