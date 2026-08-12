@@ -35,7 +35,17 @@
    "default": 8
   },
   "group_persona": {},
-  "target_matcher": {}
+  "target_matcher": {},
+  "personas": {
+   "enabled": true,
+   "default": "",
+   "per_group": {
+    "群名": "wen"
+   },
+   "definitions": {
+    "wen": "personas/wen.md"
+   }
+  }
  },
  "llm": {
   "base_url": "https://YOUR_LLM_PROVIDER/v1",

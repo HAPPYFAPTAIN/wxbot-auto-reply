@@ -12,6 +12,7 @@ wxbot.py       主守护进程：轮询会话 → 检测新消息 → 打开会�
 wxmini.py      UIA 基础库（找窗口、搜索联系人、点击、打字发送）
 wxmini2.py     UIA 扩展库（会话列表、读聊天气泡、左右侧判断、发送）
 wxbot-gui/     本地 Web 控制台（Express + TS）：改配置、看状态、重启、看日志
+personas/      蒸馏人格文件（如 wen.md），按群注入说话风格
 wxbot_config.example.json   配置样例（复制为 wxbot_config.json 使用）
 ```
 
@@ -32,6 +33,7 @@ wxbot_config.example.json   配置样例（复制为 wxbot_config.json 使用）
 - `llm.api_key_env`：API key 从环境变量读取（不写进配置文件）
 - `reply.group.mention_names` / `own_nicknames`：你的微信昵称
 - `reply.unlimited_groups`：无需 @ 也自动回复的群（慎用）
+- `reply.personas`：人格系统。`per_group` 按群指定人格名，`definitions` 映射人格名 → 人格文件，`enabled: false` 可整体关闭。示例：DeepSeek 群挂 `wen` 人格（见 `personas/wen.md`，蒸馏自真实聊天语录）
 
 ## 运行
 

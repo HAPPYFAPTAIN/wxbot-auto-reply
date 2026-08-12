@@ -17,7 +17,7 @@ const WS = path.resolve(__dirname, "..");
 const CONFIG_PATH = path.join(WS, "wxbot_config.json");
 const OUT_LOG = path.join(WS, "wxbot_out.log");
 const ERR_LOG = path.join(WS, "wxbot_err.log");
-const PY = "python";
+const PY = "C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python311\\python.exe";
 const WXBOT = path.join(WS, "wxbot.py");
 const PORT = 7931;
 
@@ -26,24 +26,30 @@ const DEFAULT_CONFIG: any = {
   poll_interval_seconds: 45,
   reply: {
     private: { enabled: true, min_delay_s: 8.0, max_delay_s: 15.0 },
-    group: { enabled: true, require_mention: true, min_delay_s: 10.0, max_delay_s: 20.0, mention_names: ["YOUR_NICKNAME"] },
-    unlimited_groups: [],
+    group: { enabled: true, require_mention: true, min_delay_s: 10.0, max_delay_s: 20.0, mention_names: ["爱而不恨"] },
+    unlimited_groups: ["【官方】DeepSeek交流34群"],
     unlimited_group_interval_s: 90,
     max_sentences: 4,
     sentence_delay_s: [1.0, 2.5],
     allow_contacts: [],
     deny_contacts: ["公众号", "服务号", "文件传输助手", "折叠的聊天", "微信团队"],
     max_reply_chars: 300,
+    personas: {
+      enabled: true,
+      default: "",
+      per_group: { "【官方】DeepSeek交流34群": "wen" },
+      definitions: { "wen": "personas/wen.md" },
+    },
   },
   llm: {
-    base_url: "https://YOUR_LLM_PROVIDER/v1",
-    model: "YOUR_MODEL",
-    api_key_env: "LLM_API_KEY",
+    base_url: "https://api.kimi.com/coding/v1",
+    model: "k3-256k",
+    api_key_env: "KIMI_API_KEY",
     temperature: 0.9,
     max_tokens: 400,
   },
   state_file: path.join(WS, "wxbot_state.json"),
-  own_nicknames: ["YOUR_NICKNAME"],
+  own_nicknames: ["爱而不恨"],
 };
 
 function mergeConfig(user: any): any {

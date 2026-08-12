@@ -26,16 +26,26 @@ DEFAULT_CONFIG = {
     "reply": {
         "private": {"enabled": True, "min_delay_s": 8.0, "max_delay_s": 15.0},
         "group": {"enabled": True, "require_mention": True, "min_delay_s": 2.0, "max_delay_s": 5.0,
-                  "mention_names": []},
-        "unlimited_groups": [],
+                  "mention_names": ["爱而不恨"]},
+        "unlimited_groups": ["【官方】DeepSeek交流34群"],
         "unlimited_group_interval_s": 0,
-        "context_messages": {"default": 8},
+        "context_messages": {"default": 8, "【官方】DeepSeek交流34群": 30},
         "group_persona": {},
         "max_sentences": 4,
         "sentence_delay_s": [8.0, 8.0],
         "allow_contacts": [],
         "deny_contacts": ["公众号", "服务号", "文件传输助手", "折叠的聊天", "微信团队"],
-        "max_reply_chars": 300
+        "max_reply_chars": 300,
+        "personas": {
+            "enabled": True,
+            "default": "",
+            "per_group": {
+                "【官方】DeepSeek交流34群": "wen"
+            },
+            "definitions": {
+                "wen": "personas/wen.md"
+            }
+        }
     },
     "llm": {
         "base_url": "https://opencode.ai/zen/go/v1",
@@ -45,7 +55,7 @@ DEFAULT_CONFIG = {
         "max_tokens": 400
     },
     "state_file": os.path.join(BASE, "wxbot_state.json"),
-    "own_nicknames": []
+    "own_nicknames": ["爱而不恨"]
 }
 
 def load_config():
@@ -125,7 +135,7 @@ def llm_reply(cfg, conversation, inbound_text, context=None):
         try:
             oc = os.path.expanduser("~/.openclaw/openclaw.json")
             if not os.path.exists(oc):
-                # oc = "<OPENCLAW_HOME>/openclaw.json"
+                oc = "F:/OpenClaw/.openclaw/openclaw.json"
             with open(oc, "r", encoding="utf-8") as f:
                 data = json.load(f)
             api_key = (data.get("env") or {}).get(key_env, "")
@@ -137,7 +147,7 @@ def llm_reply(cfg, conversation, inbound_text, context=None):
     import urllib.request
     url = cfg["llm"]["base_url"].rstrip("/") + "/chat/completions"
     system = (
-        "你是微信上的一个 AI 私人伙伴，替主人打理微信自动回复。"
+        "你是顾笙满，微信上的一个 AI 私人伙伴。你在替你的主人张宇轩打理微信自动回复。"
         "回复要求：口语化、自然、有温度，像真人发微信，不要客套、不要长段落、不要用'作为AI'这类话。"
         "短句为主。用简体中文。句尾不要带句号。"
         "注意上下文：回复要接得上前面的聊天内容，不要答非所问。"
@@ -148,10 +158,25 @@ def llm_reply(cfg, conversation, inbound_text, context=None):
     persona = (cfg.get("reply", {}).get("group_persona", {}) or {}).get(conversation, "")
     if persona:
         system += persona
+    # ---- 人格系统：按群/默认注入蒸馏人格（如温先生） ----
+    personas_cfg = cfg.get("reply", {}).get("personas", {}) or {}
+    if personas_cfg.get("enabled", True):
+        pname = (personas_cfg.get("per_group", {}) or {}).get(conversation) or personas_cfg.get("default", "")
+        pfile = (personas_cfg.get("definitions", {}) or {}).get(pname, "")
+        if pname and pfile:
+            ppath = pfile if os.path.isabs(pfile) else os.path.join(BASE, pfile)
+            try:
+                with open(ppath, "r", encoding="utf-8") as pf:
+                    ptext = pf.read().strip()
+                if ptext:
+                    system += f"\n\n【当前人格：{pname}】请严格按照以下人格描述说话（这是你的扮演设定，优先级高于上面的一般要求）：\n{ptext}"
+                    print(f"[persona] {conversation} -> {pname}")
+            except Exception as e:
+                print(f"persona load error ({pname}):", e)
     if context:
         ctx = "\n".join(context)
         user_content = (
-            f"这是「{conversation}」里最近的聊天记录（我=主人这边发的，对方=别人发的）：\n{ctx}\n\n"
+            f"这是「{conversation}」里最近的聊天记录（我=张宇轩这边发的，对方=别人发的）：\n{ctx}\n\n"
             f"请针对最后一条对方消息，以主人朋友的身份自然回复一句：\n{inbound_text}"
         )
     else:
