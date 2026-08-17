@@ -58,7 +58,9 @@
       },
       "per_contact": {},
       "definitions": {
-        "wen": "personas/wen.md"
+        "wen": "personas/wen.md",
+        "style_mirror": "personas/style_mirror.md",
+        "private_self": "personas/private_self.md"
       },
       "behaviors": {
         "_default": {
@@ -74,7 +76,28 @@
           "at": 0.4,
           "image": 0.15,
           "quote": 0.4
+        },
+        "style_mirror": {
+          "at": 0.25,
+          "emoji": 0.2,
+          "sticker": 0.2,
+          "image": 0.1,
+          "quote": 0.25
+        },
+        "private_self": {
+          "at": 0.1,
+          "emoji": 0.15,
+          "sticker": 0.1,
+          "image": 0.05,
+          "quote": 0.15
         }
+      },
+      "style_learning": {
+        "enabled": true,
+        "personas": ["style_mirror"],
+        "sample_count": 8,
+        "max_sample_chars": 80,
+        "strength": 0.85
       }
     },
     "target_matcher": {
@@ -100,17 +123,33 @@
       }
     ]
   },
+  "search": {
+    "enabled": false,
+    "zhihu_cli": "C:/Users/YOUR_USER/AppData/Local/ZhihuCLI/current/zhihu-cli.exe",
+    "count": 3,
+    "timeout_s": 20,
+    "search_db": "all"
+  },
   "vision": {
     "enabled": true,
     "base_url": "https://YOUR_LLM_ENDPOINT/v1",
     "model": "YOUR_VISION_MODEL",
     "api_key_env": "YOUR_LLM_KEY_ENV",
     "max_tokens": 300,
+    "retries": 1,
     "fallbacks": [
       {
         "base_url": "https://YOUR_FALLBACK_ENDPOINT/v1",
         "model": "YOUR_FALLBACK_MODEL",
         "api_key_env": "YOUR_FALLBACK_KEY_ENV"
+      },
+      {
+        "base_url": "http://100.112.4.126:1234/v1",
+        "model": "xxn/qwen3.5-9b-uncensored-hauhaucs-aggressive",
+        "api_key": "lm-studio",
+        "local": true,
+        "timeout": 60,
+        "max_tokens": 500
       }
     ]
   },

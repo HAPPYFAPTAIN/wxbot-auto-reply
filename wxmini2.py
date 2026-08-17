@@ -9,7 +9,7 @@ Extends the hand-rolled UIA approach (no wxauto, direct UIA walking):
 Verified 2026-08-11: session_list id='session_list' (13 convs incl. groups),
 chat_message_list id='chat_message_list' exposes bubble items with Name = text.
 """
-import sys, time, ctypes, random
+import os, sys, time, ctypes, random
 import ctypes.wintypes as wt
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
@@ -170,15 +170,27 @@ def find_wechat():
         return True
     WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
     u.EnumWindows(WNDENUMPROC(cb), 0)
-    if not found and hidden:
-        # 主窗口被收进托盘 → 恢复
+    # 微信可能同时有可见插件壳窗口和隐藏的真正主窗口。先在全部候选中寻找
+    # session_list；命中隐藏主窗口时恢复它，不能只看可见候选。
+    for hwnd in found + hidden:
+        try:
+            if find_session_list(hwnd) is not None:
+                if hwnd in hidden:
+                    u.ShowWindow(hwnd, 9)
+                    time.sleep(0.8)
+                return hwnd
+        except Exception:
+            continue
+    if found:
+        return found[0]
+    if hidden:
         u.ShowWindow(hidden[0], 9)
         time.sleep(0.8)
         if u.IsWindowVisible(hidden[0]):
-            found.append(hidden[0])
+            return hidden[0]
     if not found:
         raise RuntimeError("WeChat main window not found (is 微信 running?)")
-    return found[0]
+    raise RuntimeError("WeChat main window is not visible")
 
 def force_foreground(hwnd):
     fg = u.GetForegroundWindow()
@@ -276,12 +288,18 @@ def find_message_list(hwnd):
     return _walk(_root(hwnd), 0, lambda c: c if c.AutomationId == "chat_message_list" else None)
 
 # ---------------------------------------------------------------- read
-def list_sessions(hwnd=None):
-    """Return [{name, last, raw}] for each conversation in the left sidebar."""
+def list_sessions(hwnd=None, retries=3):
+    """Return [{name, last, raw}] for each conversation in the left sidebar.
+    UIA 控件树可能在微信切换页面时短暂重建，先短重试，持续缺失才报错给自愈层。"""
     hwnd = hwnd or find_wechat()
-    sl = find_session_list(hwnd)
+    sl = None
+    for _ in range(max(1, retries)):
+        sl = find_session_list(hwnd)
+        if sl is not None:
+            break
+        time.sleep(0.45)
     if sl is None:
-        return []
+        raise RuntimeError("session_list control not found")
     items = []
     def ci(x):
         if getattr(x, "ControlTypeName", "") == "ListItemControl":
@@ -414,10 +432,15 @@ def current_chat_name(hwnd=None):
     if c is None: return None
     return c.Name or None
 
-def restart_wechat(exe_path=r"E:\Weixin\Weixin.exe", wait_s=25):
-    """重启微信并自动进入主界面（登录确认页按 Enter）。
-    用于 UIA 树挂死（list_sessions 长期返回空）时的自愈。"""
+def restart_wechat(exe_path=r"E:\Weixin\Weixin.exe", wait_s=45, launch_attempts=3):
+    """重启微信并等待 UIA 主界面就绪。
+
+    只在开始时终止一次旧进程。启动失败时重试拉起，但不会再次杀掉正在初始化的
+    新进程，避免形成“刚启动又被杀”的循环。
+    """
     import subprocess
+    if not os.path.isfile(exe_path):
+        raise RuntimeError(f"WeChat executable not found: {exe_path}")
     for pid_name in ("Weixin",):
         try:
             subprocess.run(["taskkill", "/F", "/IM", f"{pid_name}.exe"],
@@ -425,23 +448,41 @@ def restart_wechat(exe_path=r"E:\Weixin\Weixin.exe", wait_s=25):
         except Exception:
             pass
     time.sleep(3)
-    subprocess.Popen([exe_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(10)
-    # 登录确认界面：前置 + Enter 进入
+    proc = None
+    launch_error = None
+    for attempt in range(1, launch_attempts + 1):
+        try:
+            proc = subprocess.Popen([exe_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(2)
+            if proc.poll() is None:
+                break
+            launch_error = RuntimeError(f"WeChat exited immediately with code {proc.returncode}")
+        except Exception as e:
+            launch_error = e
+        if attempt < launch_attempts:
+            time.sleep(2)
+    if proc is None or proc.poll() is not None:
+        raise RuntimeError(f"cannot launch WeChat: {launch_error}")
+
+    # 登录确认界面：周期性前置 + Enter，直到 session_list 控件出现。
     t0 = time.time()
+    last_enter = 0.0
+    last_error = None
     while time.time() - t0 < wait_s:
         try:
             hwnd = find_wechat()
             force_foreground(hwnd)
-            time.sleep(0.5)
-            key(0x0D)
-            time.sleep(4)
-            ss = list_sessions(hwnd)
-            if ss:
+            if find_session_list(hwnd) is not None:
                 return hwnd
-        except Exception:
-            time.sleep(2)
-    raise RuntimeError("restart_wechat: cannot enter main window")
+            if time.time() - last_enter >= 5:
+                key(0x0D)
+                last_enter = time.time()
+        except Exception as e:
+            last_error = e
+        if proc.poll() is not None:
+            raise RuntimeError(f"WeChat exited during startup with code {proc.returncode}")
+        time.sleep(2)
+    raise RuntimeError(f"restart_wechat: UIA main window not ready after {wait_s}s; last_error={last_error}")
 
 # ---------------------------------------------------------------- @ member
 def find_mention_list(hwnd):

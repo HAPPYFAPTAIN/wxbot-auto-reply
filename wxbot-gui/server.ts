@@ -67,6 +67,7 @@ const DEFAULT_CONFIG: any = {
     max_tokens: 300,
     fallbacks: [
       { base_url: "https://fast.clawapi.store/v1", model: "gpt-5.6-sol", api_key_env: "CLAWAPI_API_KEY" },
+      { base_url: "http://100.112.4.126:1234/v1", model: "xxn/qwen3.5-9b-uncensored-hauhaucs-aggressive", api_key: "lm-studio", local: true, timeout: 60, max_tokens: 500 },
     ],
   },
   images: {
@@ -85,16 +86,23 @@ const DEFAULT_CONFIG: any = {
 };
 
 function mergeConfig(user: any): any {
-  const cfg: any = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
-  if (!user) return cfg;
-  for (const [k, v] of Object.entries(user)) {
-    if (v && typeof v === "object" && !Array.isArray(v) && typeof cfg[k] === "object" && !Array.isArray(cfg[k])) {
-      cfg[k] = { ...cfg[k], ...(v as any) };
-    } else {
-      cfg[k] = v;
+  const merge = (base: any, override: any): any => {
+    if (!override || typeof override !== "object" || Array.isArray(override)) return override;
+    const result = { ...(base || {}) };
+    for (const [key, value] of Object.entries(override)) {
+      result[key] = value && typeof value === "object" && !Array.isArray(value)
+        ? merge(result[key], value)
+        : value;
     }
-  }
-  return cfg;
+    return result;
+  };
+  return merge(JSON.parse(JSON.stringify(DEFAULT_CONFIG)), user || {});
+}
+
+function atomicWriteJson(file: string, value: any): void {
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(value, null, 1), "utf-8");
+  fs.renameSync(tmp, file);
 }
 
 function readConfig(): any {
@@ -119,10 +127,12 @@ function runPS(cmd: string): Promise<string> {
   });
 }
 
+const escapedWxbot = WXBOT.replace(/'/g, "''");
+const PS_MATCH = `Where-Object { $_.CommandLine -like '*${escapedWxbot}*' }`;
 const PS_STATUS =
-  `Get-CimInstance Win32_Process -Filter "Name like 'python%'" | Where-Object { $_.CommandLine -like '*wxbot.py*' } | Select-Object -ExpandProperty ProcessId`;
+  `Get-CimInstance Win32_Process -Filter "Name like 'python%'" | ${PS_MATCH} | Select-Object -ExpandProperty ProcessId`;
 const PS_KILL =
-  `Get-CimInstance Win32_Process -Filter "Name like 'python%'" | Where-Object { $_.CommandLine -like '*wxbot.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;
+  `Get-CimInstance Win32_Process -Filter "Name like 'python%'" | ${PS_MATCH} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;
 
 async function findPids(): Promise<number[]> {
   const out = await runPS(PS_STATUS);
@@ -141,6 +151,7 @@ function spawnWxbot(): number {
     stdio: ["ignore", out, err],
     windowsHide: true,
   });
+  if (!child.pid) throw new Error("wxbot 进程启动失败：未获得 PID");
   child.unref();
   return child.pid;
 }
@@ -160,7 +171,7 @@ app.put("/api/config", (req, res) => {
       res.status(400).json({ ok: false, error: "bad body" });
       return;
     }
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(body, null, 1), "utf-8");
+    atomicWriteJson(CONFIG_PATH, body);
     res.json({ ok: true });
   } catch (e: any) {
     res.status(500).json({ ok: false, error: String(e) });
@@ -202,10 +213,13 @@ app.get("/api/logs", (req, res) => {
   const n = Math.min(parseInt(String(req.query.n || "200"), 10) || 200, 1000);
   let text = "";
   try {
-    if (fs.existsSync(OUT_LOG)) {
-      const lines = fs.readFileSync(OUT_LOG, "utf-8").split(/\r?\n/);
-      text = lines.slice(-n).join("\n");
+    const chunks: string[] = [];
+    if (fs.existsSync(OUT_LOG)) chunks.push(fs.readFileSync(OUT_LOG, "utf-8"));
+    if (fs.existsSync(ERR_LOG)) {
+      const stderr = fs.readFileSync(ERR_LOG, "utf-8").trim();
+      if (stderr) chunks.push(`[stderr]\n${stderr}`);
     }
+    text = chunks.join("\n").split(/\r?\n/).slice(-n).join("\n");
   } catch (e) {
     text = `log read error: ${e}`;
   }
@@ -418,7 +432,6 @@ app.post("/api/llm/test", async (req, res) => {
         model,
         messages: [{ role: "user", content: "ping，只回复一个字" }],
         max_tokens: 32,
-        temperature: 0,
       }),
       signal: ctrl.signal,
     });
@@ -441,6 +454,6 @@ app.post("/api/llm/test", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, "127.0.0.1", () => {
   console.log(`wxbot-gui listening on http://127.0.0.1:${PORT}`);
 });
