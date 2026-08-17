@@ -874,6 +874,49 @@ def click_context_menu(item_name, timeout=3.0):
     return False
 
 
+def avatar_point_from_message_rect(message_rect):
+    """Estimate the sender avatar center from a visible WeChat message row."""
+    l, t, r, b = [int(v) for v in message_rect]
+    width, height = r - l, b - t
+    if width < 120 or height < 45:
+        raise ValueError("message row is too small for an avatar")
+    x = l + min(32, max(22, int(width * 0.03)))
+    y = t + min(45, max(24, int(height * 0.4)))
+    if not (l < x < r and t < y < b):
+        raise ValueError("avatar point is outside the message row")
+    return x, y
+
+
+def poke_sender(contact, message_rect, retries=1):
+    """拍一拍可见的最后一条对方消息发送者，不做文字发送降级。"""
+    hwnd = find_wechat()
+    cp = find_chat_page(hwnd)
+    cur = current_chat_name(hwnd) if cp is not None else None
+    if cp is None or cur != contact:
+        if not open_chat_by_click(hwnd, contact):
+            raise RuntimeError(f"cannot open chat with {contact!r}")
+        cp = find_chat_page(hwnd)
+    if cp is None or current_chat_name(hwnd) != contact:
+        raise RuntimeError(f"chat changed before poke: {contact!r}")
+    force_foreground(hwnd)
+    fresh = [
+        m for m in read_chat(hwnd, limit=12, detect_side=True)
+        if m.get("side") == "other" and m.get("kind") in ("text", "image", "file")
+    ]
+    if fresh:
+        message_rect = fresh[-1]["rect"]
+    x, y = avatar_point_from_message_rect(message_rect)
+    for _ in range(max(0, int(retries)) + 1):
+        right_click(x, y)
+        time.sleep(0.7)
+        if click_context_menu("拍一拍", timeout=2.5):
+            time.sleep(0.6)
+            return True
+        key(0x1B)
+        time.sleep(0.3)
+    raise RuntimeError("拍一拍 menu item not found")
+
+
 def quote_reply(contact, bubble_rect, text):
     """引用指定气泡的消息并回复。bubble_rect = read_chat 里那条消息的 rect。
     流程：右键气泡中心 → 菜单点「引用」→ 粘贴文本 → 回车。"""

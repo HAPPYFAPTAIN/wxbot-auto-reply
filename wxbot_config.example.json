@@ -49,6 +49,7 @@
       "微信团队"
     ],
     "max_reply_chars": 300,
+    "poke_cooldown_s": 600,
     "personas": {
       "enabled": true,
       "dir": "personas",
@@ -65,10 +66,11 @@
       "behaviors": {
         "_default": {
           "at": 0.2,
-          "emoji": 0.15,
-          "sticker": 0.15,
-          "image": 0.1,
-          "quote": 0.2
+          "emoji": 0.35,
+          "sticker": 0.2,
+          "image": 0.2,
+          "quote": 0.2,
+          "poke": 0.1
         },
         "wen": {
           "sticker": 0.3,
@@ -86,10 +88,11 @@
         },
         "private_self": {
           "at": 0.1,
-          "emoji": 0.15,
-          "sticker": 0.1,
-          "image": 0.05,
-          "quote": 0.15
+          "emoji": 0.35,
+          "sticker": 0.2,
+          "image": 0.2,
+          "quote": 0.15,
+          "poke": 0.1
         }
       },
       "style_learning": {

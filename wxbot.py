@@ -42,6 +42,7 @@ DEFAULT_CONFIG = {
         "allow_contacts": [],
         "deny_contacts": ["公众号", "服务号", "文件传输助手", "折叠的聊天", "微信团队"],
         "max_reply_chars": 300,
+        "poke_cooldown_s": 600,
         "personas": {
             "enabled": True,
             "dir": "personas",
@@ -148,7 +149,7 @@ class State:
     def _defaults():
         return {
             "version": 1, "seen": {}, "replied_to": {}, "sent": [],
-            "reply_ts": {}, "memory_extract_count": {},
+            "reply_ts": {}, "poke_ts": {}, "memory_extract_count": {},
         }
     def _load(self):
         try:
@@ -191,6 +192,10 @@ class State:
         return self.data.get("reply_ts", {}).get(name, 0)
     def mark_reply_ts(self, name):
         self.data.setdefault("reply_ts", {})[name] = time.time()
+    def last_poke_ts(self, name):
+        return self.data.get("poke_ts", {}).get(name, 0)
+    def mark_poke_ts(self, name):
+        self.data.setdefault("poke_ts", {})[name] = time.time()
     def recently_sent(self, name, text, window_s=120):
         now = time.time()
         for s in self.data["sent"]:
@@ -446,8 +451,8 @@ def resolve_sticker(items, token):
     return best
 
 # ---------------------------------------------------------------- personas & behavior knobs
-DEFAULT_BEHAVIOR = {"sticker": 0.15, "emoji": 0.15, "at": 0.2, "image": 0.1, "quote": 0.2}
-BEHAVIOR_KEYS = ("sticker", "emoji", "at", "image", "quote")
+DEFAULT_BEHAVIOR = {"sticker": 0.2, "emoji": 0.35, "at": 0.2, "image": 0.2, "quote": 0.2, "poke": 0.1}
+BEHAVIOR_KEYS = ("sticker", "emoji", "at", "image", "quote", "poke")
 
 def _personas_cfg(cfg):
     return (cfg.get("reply", {}) or {}).get("personas", {}) or {}
@@ -649,6 +654,7 @@ def _build_system(cfg, conversation, inbound_text, is_group, pname, beh, ppath):
         "① 想 @ 群里的某个人（仅群聊）：把回复第一句以「@昵称 」（昵称+空格）开头；"
         "② 想发一张图片/表情包：单独占一行写 [IMG:关键词]，关键词可省略写成 [IMG] 随机挑；"
         "②b 想发微信自带表情：单独占一行写 [EMOJI:表情名]，如 [EMOJI:旺柴]、[EMOJI:捂脸]、[EMOJI:偷笑]、[EMOJI:鄙视]；"
+        "②c 群聊里想拍最后一条消息的发送者：单独占一行写 [POKE]；只在轻松友好的场景偶尔使用；"
         "③ 对方发来图片时你能看到图片内容描述；对方发来文件时你能看到文件内容，据此自然回应。"
     )
     if (cfg.get("search") or {}).get("enabled", False):
@@ -671,6 +677,7 @@ def _build_system(cfg, conversation, inbound_text, is_group, pname, beh, ppath):
     ]
     if is_group:
         hints.insert(0, _freq_hint("@人", beh["at"]))
+        hints.append(_freq_hint("拍一拍", beh["poke"]))
     system += (
         "\n行为偏好：" + "、".join(hints) + "。严格按这个频率决定用不用对应能力，频率低就绝大多数时候纯文字回复。"
         "想引用对方那条消息再回复：把回复第一句以「[Q] 」（大写Q+空格）开头，机器人会引用那条消息再发这句话；"
@@ -866,6 +873,12 @@ def mentioned_me(text, cfg):
             return True
     return False
 
+
+def is_poke_notice(text):
+    """Return whether a session preview is a WeChat poke system notice."""
+    clean = re.sub(r"^\[(?:\d+条|有人@我)\]\s*", "", text or "").strip()
+    return bool(re.fullmatch(r"[^，。！？\n]{1,40}拍了拍[^，。！？\n]{0,40}", clean))
+
 # UIA 错误日志节流：同一种错只打首条，之后每 20 次报一次计数
 _UIA_ERR = {"msg": None, "count": 0}
 
@@ -922,6 +935,10 @@ def poll_once(cfg, state, hwnd):
         if _allow and name not in _allow:
             continue
         if not last:
+            continue
+        if is_poke_notice(last):
+            state.mark_seen(name, last)
+            state.save()
             continue
         # skip if we already handled this exact last message
         if state.is_seen(name, last):
@@ -1161,6 +1178,32 @@ def poll_once(cfg, state, hwnd):
         beh = behavior_for(cfg, persona_for_conversation(cfg, name, is_group))
         for i, sent in enumerate(sentences):
             try:
+                if re.fullmatch(r"\[POKE\]", sent.strip(), re.I):
+                    if not is_group:
+                        print(f"[wxbot] poke ignored outside group: {name}")
+                        continue
+                    if not _roll(beh["poke"]):
+                        print(f"[wxbot] poke throttled ({beh['poke']:.0%})")
+                        continue
+                    poke_cd = max(0.0, float(cfg["reply"].get("poke_cooldown_s", 600) or 0))
+                    if time.time() - state.last_poke_ts(name) < poke_cd:
+                        print(f"[wxbot] poke cooldown active: {name}")
+                        continue
+                    if not last_bubble.get("rect") or last_bubble.get("side") != "other":
+                        print(f"[wxbot] poke ignored: no visible other-side target")
+                        continue
+                    print(f"[wxbot] poke sender in {name}")
+                    try:
+                        wx.poke_sender(name, last_bubble["rect"])
+                        state.record_sent(name, "[拍一拍]")
+                        state.mark_poke_ts(name)
+                        sent_ok += 1
+                    except Exception as e:
+                        print("poke sender error:", e)
+                        send_failures += 1
+                    if i < len(sentences) - 1:
+                        time.sleep(random.uniform(sd[0], sd[1]))
+                    continue
                 # [Q] 前缀：引用对方那条消息再回复（第一句有效，按 quote 频率节流）
                 if i == 0:
                     q_m = re.match(r"^\[Q\]\s*(.+)$", sent.strip(), re.S)
