@@ -190,7 +190,7 @@
     $("btnSaveTop").disabled = !v;
   }
   function watchDirty() {
-    const skip = /* @__PURE__ */ new Set(["persona_content", "persona_select", "logs"]);
+    const skip = /* @__PURE__ */ new Set(["persona_content", "persona_select", "logView", "callList"]);
     document.querySelectorAll("main input, main textarea, main select").forEach((el) => {
       if (skip.has(el.id)) return;
       el.addEventListener("input", () => setDirty(true));
@@ -241,14 +241,267 @@
       toast(`\u542F\u52A8\u5931\u8D25: ${e}`, false);
     }
   }
+  var LOG_STATE = {
+    cursor: 0,
+    // 运行日志已读行号游标
+    callCursor: 0,
+    // 调用日志已读游标
+    follow: true,
+    // 跟随滚动
+    tab: "runtime"
+  };
+  function tagClassOf(tag, line) {
+    const t = tag.toLowerCase();
+    if (/error|exception|traceback|fail/i.test(t)) return "err";
+    if (/send|发送|nav|navigate/i.test(t)) return "send";
+    if (/llm|model|reply/i.test(t)) return "llm";
+    if (/vision|识图/i.test(t)) return "vision";
+    if (/ok|成功|ready/i.test(t)) return "ok";
+    if (/warn|skip|降级|跳过|retry|fallback/i.test(t)) return "warn";
+    if (/poll|changed|mention|weflow/i.test(t)) return "poll";
+    return "info";
+  }
+  function lineLevel(line) {
+    if (/error|exception|traceback|failed|失败|异常/i.test(line)) return "lv-err";
+    if (/warn|skip|降级|跳过|retry|fallback|超时/i.test(line)) return "lv-warn";
+    if (/send ok|发送成功|已发送|回复了|replied/i.test(line)) return "lv-ok";
+    if (/sticker catalog|load error/i.test(line)) return "lv-warn";
+    return "";
+  }
   async function refreshLogs() {
+    if (LOG_STATE.tab !== "runtime") return;
     try {
-      const text = await api("/api/logs?n=200");
-      const el = $("logs");
-      el.textContent = text || "\uFF08\u6682\u65E0\u65E5\u5FD7\uFF09";
-      el.scrollTop = el.scrollHeight;
+      const data = await api(`/api/logs?format=json&since=${LOG_STATE.cursor}`);
+      if (!data || !Array.isArray(data.lines) || data.lines.length === 0) {
+        if (LOG_STATE.cursor === 0) {
+          const view2 = $("logView");
+          view2.innerHTML = `<div class="empty-tip">\uFF08\u6682\u65E0\u65E5\u5FD7 \u2014\u2014 \u542F\u52A8 wxbot \u540E\u8FD9\u91CC\u4F1A\u5B9E\u65F6\u6EDA\u52A8\uFF09</div>`;
+        }
+        return;
+      }
+      const view = $("logView");
+      if (view.querySelector(".empty-tip")) view.innerHTML = "";
+      const q = $("logSearch").value.trim().toLowerCase();
+      data.lines.forEach((ln, i) => {
+        const row = document.createElement("div");
+        row.className = "log-line";
+        const num = document.createElement("span");
+        num.className = "ln";
+        num.textContent = String(LOG_STATE.cursor + i + 1);
+        const body = document.createElement("span");
+        body.className = "body";
+        const m = ln.match(/^(\d{2}:\d{2}:\d{2})\s+\[([^\]]+)\]/);
+        if (m) {
+          const tm = document.createElement("span");
+          tm.className = "ts";
+          tm.textContent = m[1];
+          const tag = document.createElement("span");
+          tag.className = `tag t-${tagClassOf(m[2], ln)}`;
+          tag.textContent = `[${m[2]}]`;
+          body.appendChild(tag);
+          body.appendChild(document.createTextNode(ln.slice(m[0].length)));
+          row.appendChild(num);
+          row.appendChild(tm);
+        } else {
+          body.textContent = ln;
+          row.appendChild(num);
+        }
+        row.appendChild(body);
+        const lv = lineLevel(ln);
+        if (lv) row.classList.add(lv);
+        if (q && !ln.toLowerCase().includes(q)) row.classList.add("filtered");
+        view.appendChild(row);
+      });
+      LOG_STATE.cursor += data.lines.length;
+      updateLogCount();
+      if (LOG_STATE.follow) view.scrollTop = view.scrollHeight;
     } catch {
     }
+  }
+  function applyLogFilter() {
+    const q = $("logSearch").value.trim().toLowerCase();
+    const rows = document.querySelectorAll("#logView .log-line");
+    let shown = 0;
+    rows.forEach((r) => {
+      const hit = !q || (r.textContent || "").toLowerCase().includes(q);
+      r.classList.toggle("filtered", !hit);
+      if (hit) shown++;
+    });
+    $("logCount").textContent = `${shown}/${LOG_STATE.cursor} \u884C`;
+  }
+  function updateLogCount() {
+    $("logCount").textContent = `${LOG_STATE.cursor} \u884C`;
+  }
+  function toggleLogFollow() {
+    LOG_STATE.follow = !LOG_STATE.follow;
+    const btn = $("logFollow");
+    if (LOG_STATE.follow) {
+      btn.textContent = "\u23F8 \u6682\u505C\u8DDF\u968F";
+      $("logLiveBadge").textContent = "\u25CF LIVE";
+      $("logLiveBadge").className = "badge on";
+      const v = $("logView");
+      v.scrollTop = v.scrollHeight;
+    } else {
+      btn.textContent = "\u25B6 \u6062\u590D\u8DDF\u968F";
+      $("logLiveBadge").textContent = "\u275A\u275A PAUSED";
+      $("logLiveBadge").className = "badge off";
+    }
+  }
+  function copyLogs() {
+    const rows = document.querySelectorAll("#logView .log-line:not(.filtered)");
+    const text = Array.from(rows).map((r) => r.textContent || "").join("\n");
+    if (!text) return;
+    navigator.clipboard?.writeText(text).then(() => toast(`\u5DF2\u590D\u5236 ${rows.length} \u884C\u65E5\u5FD7`, true));
+  }
+  function clearLogs() {
+    $("logView").innerHTML = "";
+    LOG_STATE.cursor = 0;
+    updateLogCount();
+    refreshLogs();
+  }
+  function parseCandLine(line) {
+    const m = line.match(/^\d+\.\s*(.*)$/);
+    const rest = m ? m[1] : line;
+    const agoM = rest.match(/^（([^）]*)）/);
+    const ago = agoM ? agoM[1] : "";
+    let after = agoM ? rest.slice(agoM[0].length) : rest;
+    let nick = "";
+    const nickM = after.match(/^@([^\s:：]+)/);
+    if (nickM) {
+      nick = nickM[1];
+      after = after.slice(nickM[0].length);
+    }
+    return { ago, nick, text: after.replace(/^[:：]\s*/, "").trim() };
+  }
+  function renderCallCard(ev) {
+    const list = $("callList");
+    if (list.querySelector(".empty-tip")) list.innerHTML = "";
+    const card = document.createElement("div");
+    card.className = "call-card";
+    const time = ev.ts ? ev.ts.slice(11, 19) : "";
+    const dot = { candidates: "#0a84ff", llm: "#64d2ff", send_ok: "#30d158", send_partial: "#ffd60a", raw: "#98989d", error: "#ff453a" }[ev.event] || "#98989d";
+    const typeLabel = {
+      candidates: "\u5019\u9009\u6D88\u606F",
+      llm: "LLM \u56DE\u590D",
+      send_ok: "\u53D1\u9001\u6210\u529F",
+      send_partial: "\u90E8\u5206\u53D1\u9001",
+      raw: "\u539F\u59CB\u884C",
+      error: "\u9519\u8BEF"
+    };
+    let sum = "";
+    if (ev.event === "candidates") sum = `${ev.name || ""} \xB7 ${ev.n || 0} \u6761\u5019\u9009`;
+    else if (ev.event === "llm") sum = `${ev.model || ""} \xB7 ${(ev.reply || "").slice(0, 36)}${(ev.reply || "").length > 36 ? "\u2026" : ""}`;
+    else if (ev.event === "send_ok") sum = `${ev.name || ""} \xB7 \u53D1\u9001 ${ev.n_sent || 0}/${(ev.sentences || []).length} \u53E5`;
+    else if (ev.event === "send_partial") sum = `${ev.name || ""} \xB7 \u90E8\u5206\u6210\u529F ${ev.n_ok}/${ev.n_total}`;
+    else sum = (ev.message || ev.raw || "").slice(0, 50);
+    const head = document.createElement("div");
+    head.className = "call-head";
+    head.innerHTML = `
+    <span class="dot" style="background:${dot}"></span>
+    <span class="c-type">${typeLabel[ev.event] || ev.event}</span>
+    <span class="c-time">${time}</span>
+    <span class="c-sum"></span>
+    <span class="chev">\u25B6</span>`;
+    head.querySelector(".c-sum").textContent = sum;
+    head.addEventListener("click", () => card.classList.toggle("open"));
+    const body = document.createElement("div");
+    body.className = "call-body";
+    if (ev.event === "candidates") {
+      body.innerHTML = `<div class="cb-row"><div class="cb-k">\u4F1A\u8BDD</div><div class="cb-v"><span class="cb-badge b-cand">${ev.n || 0} \u6761\u5019\u9009</span>${ev.name || ""}</div></div>`;
+      const wrap = document.createElement("div");
+      wrap.className = "cb-row";
+      wrap.innerHTML = `<div class="cb-k">\u5019\u9009</div>`;
+      const v = document.createElement("div");
+      v.className = "cb-v";
+      (ev.cand || []).forEach((c) => {
+        const p = parseCandLine(c);
+        const item = document.createElement("div");
+        item.className = "cand-item";
+        item.innerHTML = `<span class="c-ago">${p.ago ? "(" + p.ago + ") " : ""}</span><span class="c-who">@${p.nick || "?"}</span> <span class="c-txt">${escapeHtml(p.text)}</span>`;
+        v.appendChild(item);
+      });
+      wrap.appendChild(v);
+      body.appendChild(wrap);
+    } else if (ev.event === "llm") {
+      body.innerHTML = `<div class="cb-row"><div class="cb-k">\u4F1A\u8BDD</div><div class="cb-v"><span class="cb-badge b-llm">${ev.model || ""}</span>${ev.name || ""} \xB7 \u4E0A\u4E0B\u6587 ${ev.ctx_lines ?? "-"} \u6761${ev.search ? ` \xB7 \u68C0\u7D22: ${ev.search}` : ""}</div></div>`;
+      const rw = document.createElement("div");
+      rw.className = "cb-row";
+      rw.innerHTML = `<div class="cb-k">\u56DE\u590D</div>`;
+      const box = document.createElement("div");
+      box.className = "llm-box";
+      box.innerHTML = `<span class="r-role">mimo \u5B9E\u9645\u8F93\u51FA\uFF1A</span>
+${escapeHtml(ev.reply || "")}`;
+      rw.appendChild(box);
+      body.appendChild(rw);
+      if (ev.inbound) {
+        const iw = document.createElement("div");
+        iw.className = "cb-row";
+        iw.innerHTML = `<div class="cb-k">\u8F93\u5165</div>`;
+        const ibox = document.createElement("div");
+        ibox.className = "llm-box";
+        ibox.style.opacity = ".7";
+        ibox.textContent = ev.inbound.slice(0, 300) + (ev.inbound.length > 300 ? "\u2026" : "");
+        iw.appendChild(ibox);
+        body.appendChild(iw);
+      }
+    } else if (ev.event === "send_ok" || ev.event === "send_partial") {
+      const ok = ev.event === "send_ok";
+      const badge = ok ? '<span class="cb-badge b-ok">\u5168\u90E8\u53D1\u9001</span>' : `<span class="cb-badge b-partial">${ev.n_ok}/${ev.n_total} \u90E8\u5206</span>`;
+      body.innerHTML = `<div class="cb-row"><div class="cb-k">\u4F1A\u8BDD</div><div class="cb-v">${badge}${ev.name || ""}</div></div>`;
+      const sw = document.createElement("div");
+      sw.className = "cb-row";
+      sw.innerHTML = `<div class="cb-k">\u5185\u5BB9</div>`;
+      const box = document.createElement("div");
+      box.className = "llm-box";
+      box.textContent = (ev.sentences || []).join("\n\u2500\u2500\u2500\n");
+      sw.appendChild(box);
+      body.appendChild(sw);
+    } else {
+      body.innerHTML = `<div class="cb-row"><div class="cb-v" style="text-align:left">${escapeHtml(ev.message || ev.raw || JSON.stringify(ev))}</div></div>`;
+    }
+    card.appendChild(head);
+    card.appendChild(body);
+    list.appendChild(card);
+    while (list.children.length > 100) list.removeChild(list.firstChild);
+  }
+  function escapeHtml(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  async function refreshCallLog() {
+    if (LOG_STATE.tab !== "call") return;
+    try {
+      const data = await api(`/api/calllog?since=${LOG_STATE.callCursor}&n=100`);
+      if (!data || !data.events || data.events.length === 0) {
+        if (LOG_STATE.callCursor === 0) {
+          $("callList").innerHTML = `<div class="empty-tip">\uFF08\u6682\u65E0\u8C03\u7528\u8BB0\u5F55 \u2014\u2014 bot \u6BCF\u6B21\u52A8\u8111\u56DE\u590D\u540E\u8FD9\u91CC\u4F1A\u51FA\u73B0\u300C\u5019\u9009\u2192LLM\u2192\u53D1\u9001\u300D\u5168\u94FE\u8DEF\u5361\u7247\uFF09</div>`;
+        }
+        return;
+      }
+      data.events.forEach(renderCallCard);
+      LOG_STATE.callCursor = data.cursor;
+    } catch {
+    }
+  }
+  function copyCallLogs() {
+    const cards = document.querySelectorAll("#callList .call-card");
+    const lines = [];
+    cards.forEach((c) => {
+      const t = c.querySelector(".c-time")?.textContent || "";
+      const ty = c.querySelector(".c-type")?.textContent || "";
+      lines.push(`[${t}] ${ty}: ${c.querySelector(".c-sum")?.textContent || ""}`);
+    });
+    if (lines.length) navigator.clipboard?.writeText(lines.join("\n")).then(() => toast(`\u5DF2\u590D\u5236 ${lines.length} \u6761\u8C03\u7528\u8BB0\u5F55`, true));
+  }
+  function switchLogTab(tab) {
+    LOG_STATE.tab = tab;
+    $("tabRuntime").classList.toggle("active", tab === "runtime");
+    $("tabCall").classList.toggle("active", tab === "call");
+    $("logView").style.display = tab === "runtime" ? "" : "none";
+    $("callView").style.display = tab === "call" ? "" : "none";
+    $("logSearch").style.display = tab === "runtime" ? "" : "none";
+    $("logCount").style.display = tab === "runtime" ? "" : "none";
+    if (tab === "runtime") refreshLogs();
+    else refreshCallLog();
   }
   for (const id of ["llm_base_url", "llm_model", "llm_key_env"]) {
     $(id).addEventListener("input", () => {
@@ -521,6 +774,20 @@
     loadConfig().then(() => setDirty(false));
     refreshStatus();
     refreshLogs();
+    refreshCallLog();
+  });
+  $("tabRuntime").addEventListener("click", () => switchLogTab("runtime"));
+  $("tabCall").addEventListener("click", () => switchLogTab("call"));
+  $("logSearch").addEventListener("input", applyLogFilter);
+  $("logFollow").addEventListener("click", toggleLogFollow);
+  $("logCopy").addEventListener("click", copyLogs);
+  $("logClear").addEventListener("click", clearLogs);
+  $("callCopy").addEventListener("click", copyCallLogs);
+  var logViewEl = $("logView");
+  logViewEl.addEventListener("scroll", () => {
+    if (!LOG_STATE.follow) return;
+    const atBottom = logViewEl.scrollTop + logViewEl.clientHeight >= logViewEl.scrollHeight - 40;
+    if (!atBottom) toggleLogFollow();
   });
   watchDirty();
   loadConfig().then(() => {
@@ -529,7 +796,9 @@
   });
   refreshStatus();
   refreshLogs();
+  refreshCallLog();
   loadStickers();
   setInterval(refreshStatus, 1e4);
-  setInterval(refreshLogs, 5e3);
+  setInterval(refreshLogs, 2e3);
+  setInterval(refreshCallLog, 5e3);
 })();

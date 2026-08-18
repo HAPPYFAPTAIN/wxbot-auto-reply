@@ -19,7 +19,7 @@ const WS = path.resolve(__dirname, "..");
 const CONFIG_PATH = path.join(WS, "wxbot_config.json");
 const OUT_LOG = path.join(WS, "wxbot_out.log");
 const ERR_LOG = path.join(WS, "wxbot_err.log");
-const PY = "C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python311\\python.exe";
+const PY = "C:\\Users\\GM\\AppData\\Local\\Programs\\Python\\Python311\\python.exe";
 const WXBOT = path.join(WS, "wxbot.py");
 const PORT = 7931;
 
@@ -30,9 +30,9 @@ const DEFAULT_CONFIG: any = {
     private: { enabled: true, min_delay_s: 8.0, max_delay_s: 15.0, cooldown_s: 60,
       allow: [] as string[], deny: [] as string[],
       quiet_hours: { enabled: false, start: "23:30", end: "07:30", allow_contacts: [] } },
-    group: { enabled: true, require_mention: true, min_delay_s: 10.0, max_delay_s: 20.0, mention_names: ["爱而不恨"],
+    group: { enabled: true, require_mention: true, min_delay_s: 10.0, max_delay_s: 20.0, mention_names: ["YOUR_NICKNAME"],
       allow: [] as string[], deny: [] as string[] },
-    unlimited_groups: ["【官方】DeepSeek交流34群"],
+    unlimited_groups: [] as string[],
     unlimited_group_interval_s: 90,
     max_sentences: 4,
     sentence_delay_s: [1.0, 2.5],
@@ -43,7 +43,7 @@ const DEFAULT_CONFIG: any = {
       enabled: true,
       dir: "personas",
       default: "",
-      per_group: { "【官方】DeepSeek交流34群": "wen" },
+      per_group: { "YOUR_UNLIMITED_GROUP": "wen" },
       per_contact: {},
       definitions: { "wen": "personas/wen.md" },
       behaviors: {
@@ -67,7 +67,7 @@ const DEFAULT_CONFIG: any = {
     max_tokens: 300,
     fallbacks: [
       { base_url: "https://fast.clawapi.store/v1", model: "gpt-5.6-sol", api_key_env: "CLAWAPI_API_KEY" },
-      { base_url: "http://100.112.4.126:1234/v1", model: "xxn/qwen3.5-9b-uncensored-hauhaucs-aggressive", api_key: "lm-studio", local: true, timeout: 60, max_tokens: 500 },
+      { base_url: "http://127.0.0.1:1234/v1", model: "local-llm-model", api_key: "lm-studio", local: true, timeout: 60, max_tokens: 500 },
     ],
   },
   images: {
@@ -82,7 +82,7 @@ const DEFAULT_CONFIG: any = {
     max_chars: 1500,
   },
   state_file: path.join(WS, "wxbot_state.json"),
-  own_nicknames: ["爱而不恨"],
+  own_nicknames: ["YOUR_NICKNAME"],
 };
 
 function mergeConfig(user: any): any {
@@ -211,6 +211,8 @@ app.post("/api/restart", async (_req, res) => {
 
 app.get("/api/logs", (req, res) => {
   const n = Math.min(parseInt(String(req.query.n || "200"), 10) || 200, 1000);
+  const fmt = String(req.query.format || "text");
+  const since = parseInt(String(req.query.since || "0"), 10) || 0;
   let text = "";
   try {
     const chunks: string[] = [];
@@ -219,11 +221,47 @@ app.get("/api/logs", (req, res) => {
       const stderr = fs.readFileSync(ERR_LOG, "utf-8").trim();
       if (stderr) chunks.push(`[stderr]\n${stderr}`);
     }
-    text = chunks.join("\n").split(/\r?\n/).slice(-n).join("\n");
+    text = chunks.join("\n");
   } catch (e) {
     text = `log read error: ${e}`;
   }
-  res.type("text/plain; charset=utf-8").send(text);
+  const lines = text.split(/\r?\n/);
+  const cursor = lines.length;
+  if (fmt === "json") {
+    // 增量模式：since 之后的行；否则返回尾部 n 行
+    const out = since > 0 ? lines.slice(since) : lines.slice(-n);
+    res.json({ cursor, lines: out });
+    return;
+  }
+  res.type("text/plain; charset=utf-8").send(lines.slice(-n).join("\n"));
+});
+
+// ---------------- call log (wxbot_call.log, JSON Lines) ----------------
+const CALL_LOG = path.join(WS, "wxbot_call.log");
+
+app.get("/api/calllog", (req, res) => {
+  const n = Math.min(parseInt(String(req.query.n || "200"), 10) || 200, 500);
+  const since = parseInt(String(req.query.since || "0"), 10) || 0;
+  let events: any[] = [];
+  let cursor = 0;
+  try {
+    if (fs.existsSync(CALL_LOG)) {
+      const lines = fs.readFileSync(CALL_LOG, "utf-8").split(/\r?\n/);
+      cursor = lines.length;
+      const slice = since > 0 ? lines.slice(since) : lines.slice(-n);
+      for (const ln of slice) {
+        if (!ln.trim()) continue;
+        try {
+          events.push(JSON.parse(ln));
+        } catch {
+          events.push({ type: "raw", raw: ln.slice(0, 500) });
+        }
+      }
+    }
+  } catch (e) {
+    events = [{ type: "error", message: String(e) }];
+  }
+  res.json({ cursor, events });
 });
 
 // ---------------- custom stickers (爱心收藏表情包) ----------------

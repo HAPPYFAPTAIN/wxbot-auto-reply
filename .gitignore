@@ -16,10 +16,26 @@ workspaces/
 wxbot_images/
 tmp/
 
+# 隐私与内部文件（绝不入库）
+.workbuddy/
+personas/
+说明.md
+项目进度.md
+*.bak-*
+*.pid
+
+# 二进制/构建缓存
+__pycache__/
+WeFlow-*.exe
+
+# 内部测试/验收脚本（含真实群与账号信息）
+test_at.py
+test_send_group.py
+verify_ctx.py
+
+# 提示词预览快照（生成产物，含真实会话内容）
+prompt_preview.md
+
 # 系统/编辑器
 .DS_Store
 Thumbs.db
-
-# Python 缓存
-__pycache__/
-*.py[cod]

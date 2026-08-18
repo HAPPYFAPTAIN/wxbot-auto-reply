@@ -103,6 +103,82 @@
     padding: 12px; font-family: "SF Mono", Consolas, monospace; font-size: 12px; white-space: pre-wrap;
     max-height: 280px; overflow-y: auto; color: var(--dim);
   }
+  /* ================= 日志查看器 ================= */
+  .log-tabs { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+  .log-tab {
+    background: var(--card2); color: var(--dim); border: .5px solid var(--border);
+    border-radius: 980px; padding: 7px 16px; font-size: 13px; cursor: pointer; font-weight: 500;
+    transition: all .18s;
+  }
+  .log-tab:hover { color: var(--fg); }
+  .log-tab.active { background: var(--accent); color: #fff; border-color: transparent; }
+  .log-toolbar { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; flex-wrap: wrap; }
+  .log-toolbar input[type=text] { flex: 1; min-width: 180px; }
+  .log-view {
+    background: var(--mono-bg); border: .5px solid var(--border); border-radius: 12px;
+    padding: 10px 0; font-family: "SF Mono", Consolas, monospace; font-size: 12px;
+    max-height: 480px; overflow-y: auto; line-height: 1.55;
+  }
+  .log-line {
+    display: flex; gap: 8px; padding: 1px 14px; white-space: pre-wrap; word-break: break-all;
+    border-left: 2px solid transparent; transition: background .12s;
+  }
+  .log-line:hover { background: rgba(127,127,127,.08); }
+  .log-line .ln { color: var(--dim); opacity: .55; flex-shrink: 0; user-select: none; min-width: 34px; text-align: right; }
+  .log-line .ts { color: var(--dim); opacity: .7; flex-shrink: 0; user-select: none; }
+  .log-line .body { flex: 1; }
+  .log-line .tag { font-weight: 600; }
+  .log-line.lv-info .tag { color: var(--accent); }
+  .log-line.lv-ok .tag { color: var(--green); }
+  .log-line.lv-warn .tag { color: var(--yellow); }
+  .log-line.lv-err .tag { color: var(--red); }
+  .log-line.lv-send .tag { color: #bf5af2; }
+  .log-line.lv-llm .tag { color: #64d2ff; }
+  .log-line.lv-skip { opacity: .55; }
+  .log-line.hit { border-left-color: var(--accent); background: rgba(10,132,255,.08); }
+  .log-line.filtered { display: none; }
+  .call-view { min-height: 320px; }
+  #callList { display: flex; flex-direction: column; gap: 10px; }
+  .call-card {
+    background: var(--card); border: .5px solid var(--border); border-radius: 12px; overflow: hidden;
+  }
+  .call-head {
+    display: flex; align-items: center; gap: 8px; padding: 9px 14px; font-size: 12px; cursor: pointer;
+    user-select: none; background: var(--card2); transition: background .15s;
+  }
+  .call-head:hover { background: rgba(127,127,127,.1); }
+  .call-head .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .call-head .c-type { font-weight: 600; font-size: 12px; }
+  .call-head .c-time { color: var(--dim); }
+  .call-head .c-sum { flex: 1; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .call-head .chev { color: var(--dim); transition: transform .2s; }
+  .call-card.open .call-head .chev { transform: rotate(90deg); }
+  .call-body { padding: 10px 14px; display: none; font-size: 12.5px; }
+  .call-card.open .call-body { display: block; }
+  .call-body .cb-row { display: flex; gap: 10px; margin-bottom: 6px; }
+  .call-body .cb-k { color: var(--dim); width: 84px; flex-shrink: 0; text-align: right; font-size: 12px; padding-top: 2px; }
+  .call-body .cb-v { flex: 1; word-break: break-all; white-space: pre-wrap; line-height: 1.6; }
+  .cb-badge { display: inline-block; padding: 1px 8px; border-radius: 980px; font-size: 11px; margin-right: 6px; }
+  .cb-badge.b-ok { background: rgba(48,209,88,.15); color: var(--green); }
+  .cb-badge.b-partial { background: rgba(255,214,10,.15); color: var(--yellow); }
+  .cb-badge.b-fail { background: rgba(255,69,58,.15); color: var(--red); }
+  .cb-badge.b-llm { background: rgba(100,210,255,.15); color: #64d2ff; }
+  .cb-badge.b-cand { background: rgba(10,132,255,.15); color: var(--accent); }
+  .cand-item { padding: 5px 10px; border-radius: 8px; background: var(--mono-bg); margin-bottom: 5px; font-size: 12px; }
+  .cand-item .c-who { color: var(--accent); font-weight: 600; }
+  .cand-item .c-txt { color: var(--fg); }
+  .cand-item .c-ago { color: var(--dim); font-size: 11px; }
+  .llm-box { background: var(--mono-bg); border-radius: 8px; padding: 8px 12px; font-family: "SF Mono", Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+  .llm-box .r-role { color: var(--dim); font-size: 11px; }
+  .empty-tip { color: var(--dim); font-size: 12.5px; text-align: center; padding: 40px 0; }
+  /* 日志类型配色（标签色） */
+  .log-line .tag.t-poll { color: var(--accent); }
+  .log-line .tag.t-send { color: #bf5af2; }
+  .log-line .tag.t-llm { color: #64d2ff; }
+  .log-line .tag.t-ok { color: var(--green); }
+  .log-line .tag.t-err { color: var(--red); }
+  .log-line .tag.t-warn { color: var(--yellow); }
+  .log-line .tag.t-vision { color: #ff9f0a; }
   .hint { color: var(--dim); font-size: 12px; }
   .sticker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; margin-top: 12px; }
   .sticker-card { background: var(--card2); border: .5px solid var(--border); border-radius: 12px; padding: 8px; text-align: center; }
@@ -277,7 +353,7 @@
     <div class="two-col">
       <div>
         <div class="row"><label style="width:auto">群指派（每行：群名:人格名）</label></div>
-        <textarea id="persona_per_group" placeholder="【官方】DeepSeek交流34群:wen"></textarea>
+        <textarea id="persona_per_group" placeholder="群名:人格名（如：AI交流群:wen）"></textarea>
       </div>
       <div>
         <div class="row"><label style="width:auto">私聊指派（每行：联系人:人格名）</label></div>
@@ -304,10 +380,32 @@
     <button id="btnSave">💾 保存配置</button>
   </div>
 
-  <section>
-    <h2>运行日志</h2>
-    <p class="sub">wxbot 实时输出，每 5 秒自动刷新</p>
-    <div id="logs">加载中…</div>
+  <section id="logSection">
+    <h2>📜 日志查看器</h2>
+    <p class="sub">运行日志 = wxbot 实时输出（增量刷新）；调用日志 = 每次回复的「候选 → LLM → 发送」全链路记录（wxbot_call.log）</p>
+    <div class="log-tabs">
+      <button class="log-tab active" data-tab="runtime" id="tabRuntime">⚙️ 运行日志</button>
+      <button class="log-tab" data-tab="call" id="tabCall">🧠 调用日志</button>
+      <span style="flex:1"></span>
+      <span id="logLiveBadge" class="badge on">● LIVE</span>
+    </div>
+    <div class="log-toolbar">
+      <input type="text" id="logSearch" placeholder="🔍 过滤关键字…（如 poll / send / error）">
+      <span id="logCount" class="hint">0 行</span>
+      <span style="flex:1"></span>
+      <button class="ghost" id="logFollow" disabled>⏸ 暂停跟随</button>
+      <button class="ghost" id="logCopy">📋 复制</button>
+      <button class="ghost" id="logClear">🗑 清空视图</button>
+    </div>
+    <div id="logView" class="log-view" style="min-height:320px"></div>
+    <div id="callView" class="call-view" style="display:none">
+      <div class="row" style="margin-bottom:8px">
+        <span class="hint">每次 bot 动脑回复都会留档：候选消息 → 模型回复 → 发送结果</span>
+        <span style="flex:1"></span>
+        <button class="ghost" id="callCopy">📋 复制</button>
+      </div>
+      <div id="callList"></div>
+    </div>
   </section>
 </main>
 

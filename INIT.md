@@ -42,7 +42,7 @@ workspace/
 ├── wxbot_context.py       # 输入缓存 + 词元估算 + 上下文压缩
 ├── wxbot_stickers.py      # 贴纸目录重建（截图 + vision 建档）
 ├── personas/              # 人格文件（每个 .md = 一个人格，文件名即人格名）
-│   └── wen.md             # 温先生（对线人格，示例）
+│   └── <persona>.md       # 示例人格（本地按需配置，不入库）
 ├── prompts/
 │   └── base.md            # 底层文档：所有对话共用的行为准则（可编辑）
 ├── workspaces/            # 对话级记忆（自动生成，不入 git）
@@ -119,17 +119,17 @@ workspace/
       "cooldown_s": 60, "allow": [], "deny": [],
       "quiet_hours": { "enabled": false, "start": "23:30", "end": "07:30", "allow_contacts": [] } },
     "group": { "enabled": true, "require_mention": true, "min_delay_s": 2, "max_delay_s": 5,
-      "mention_names": ["爱而不恨"], "allow": [], "deny": [] },
-    "unlimited_groups": ["【官方】DeepSeek交流34群"],
+      "mention_names": ["YOUR_NICKNAME"], "allow": [], "deny": [] },
+    "unlimited_groups": ["YOUR_UNLIMITED_GROUP"],
     "unlimited_group_interval_s": 0,
-    "context_messages": { "default": 8, "【官方】DeepSeek交流34群": 30 },
+    "context_messages": { "default": 8, "YOUR_UNLIMITED_GROUP": 30 },
     "max_sentences": 4,
     "sentence_delay_s": [1.0, 2.5],
     "allow_contacts": [], "deny_contacts": ["公众号", "服务号", "文件传输助手", "折叠的聊天", "微信团队"],
     "max_reply_chars": 300,
     "personas": {
       "enabled": true, "dir": "personas", "default": "",
-      "per_group": { "【官方】DeepSeek交流34群": "wen" }, "per_contact": {},
+      "per_group": { "YOUR_UNLIMITED_GROUP": "wen" }, "per_contact": {},
       "definitions": { "wen": "personas/wen.md" },
       "behaviors": {
         "_default": { "sticker": 0.15, "emoji": 0.15, "at": 0.2, "image": 0.1, "quote": 0.2 },
@@ -147,7 +147,7 @@ workspace/
   "context": { "compression": { "enabled": false, "mode": "percent", "percent": 60,
                 "tokens": 4000, "keep_recent": 4, "trim_chars": 60 } },
   "memory": { "enabled": true, "every_n_replies": 5, "long_term_chars": 1200, "daily_chars": 800 },
-  "own_nicknames": ["爱而不恨"]
+  "own_nicknames": ["YOUR_NICKNAME"]
 }
 ```
 

@@ -1,6 +1,11 @@
 {
   "enabled": true,
   "poll_interval_seconds": 5,
+  "weflow": {
+    "enabled": true,
+    "base_url": "http://127.0.0.1:5031",
+    "token": "YOUR_WEFLOW_HTTP_API_TOKEN"
+  },
   "reply": {
     "private": {
       "enabled": true,
@@ -49,7 +54,6 @@
       "微信团队"
     ],
     "max_reply_chars": 300,
-    "poke_cooldown_s": 600,
     "personas": {
       "enabled": true,
       "dir": "personas",
@@ -66,11 +70,10 @@
       "behaviors": {
         "_default": {
           "at": 0.2,
-          "emoji": 0.35,
-          "sticker": 0.2,
-          "image": 0.2,
-          "quote": 0.2,
-          "poke": 0.1
+          "emoji": 0.15,
+          "sticker": 0.15,
+          "image": 0.1,
+          "quote": 0.2
         },
         "wen": {
           "sticker": 0.3,
@@ -88,11 +91,10 @@
         },
         "private_self": {
           "at": 0.1,
-          "emoji": 0.35,
-          "sticker": 0.2,
-          "image": 0.2,
-          "quote": 0.15,
-          "poke": 0.1
+          "emoji": 0.15,
+          "sticker": 0.1,
+          "image": 0.05,
+          "quote": 0.15
         }
       },
       "style_learning": {
@@ -147,8 +149,8 @@
         "api_key_env": "YOUR_FALLBACK_KEY_ENV"
       },
       {
-        "base_url": "http://100.112.4.126:1234/v1",
-        "model": "xxn/qwen3.5-9b-uncensored-hauhaucs-aggressive",
+        "base_url": "http://127.0.0.1:1234/v1",
+        "model": "local-llm-model",
         "api_key": "lm-studio",
         "local": true,
         "timeout": 60,
