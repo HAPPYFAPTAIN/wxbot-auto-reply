@@ -42,7 +42,7 @@ wxbot_files.py  文件消息读取：定位微信文件存储 + 按类型解析�
 wxbot_memory.py 记忆系统：workspace 骨架 + system 注入 + LLM 事实提取
 wxbot_context.py 输入缓存 + 词元估算 + 上下文压缩
 wxbot_stickers.py 贴纸目录重建（截图 + vision 建档 catalog.json）
-personas/       人格文件（每个 .md = 一个人格，文件名即人格名；含示例 wen.md）
+personas/       人格文件（每个 .md = 一个人格，文件名即人格名；本地按需配置，不入库）
 prompts/        base.md —— 所有对话共用的底层行为准则（可编辑）
 wxbot-gui/      本地 Web 控制台（Express + TS + esbuild）
 workspaces/     对话级记忆（运行期生成，不入库）

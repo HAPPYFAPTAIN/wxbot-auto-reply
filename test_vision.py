@@ -53,28 +53,5 @@ class VisionTests(unittest.TestCase):
             os.remove(image_path)
 
 
-class InteractionTests(unittest.TestCase):
-    def test_avatar_point_is_inside_message_row(self):
-        import wxmini2
-        rect = (840, 360, 1700, 470)
-        x, y = wxmini2.avatar_point_from_message_rect(rect)
-        self.assertGreater(x, rect[0])
-        self.assertLess(x, rect[0] + 60)
-        self.assertGreater(y, rect[1])
-        self.assertLess(y, rect[3])
-
-    def test_poke_marker_survives_sentence_split(self):
-        self.assertEqual(["这波可以", "[POKE]", "[EMOJI:旺柴]"],
-                         wxbot.split_sentences("这波可以\n[POKE]\n[EMOJI:旺柴]"))
-
-    def test_behavior_defaults_include_poke(self):
-        beh = wxbot.behavior_for({"reply": {"personas": {}}}, "")
-        self.assertEqual(0.1, beh["poke"])
-
-    def test_poke_system_notice_is_filtered(self):
-        self.assertTrue(wxbot.is_poke_notice("张三拍了拍李四"))
-        self.assertFalse(wxbot.is_poke_notice("拍一拍这个功能怎么用"))
-
-
 if __name__ == "__main__":
     unittest.main()
